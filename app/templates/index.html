@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>강의 분석기</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .result-section {
+            margin-bottom: 30px;
+        }
+
+        .analysis-card {
+            background-color: #fff;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        .analysis-card h3 {
+            color: #1a73e8;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid rgba(26, 115, 232, 0.2);
+            font-weight: 500;
+        }
+
+        .analysis-card .section-content {
+            color: #555;
+        }
+
+        .analysis-content {
+            color: #2c3e50;
+            line-height: 1.7;
+        }
+
+        .analysis-content br {
+            display: block;
+            margin: 8px 0;  /* 줄바꿈 간격 조정 */
+            content: "";
+        }
+
+        .matched-subjects-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .matched-subjects-list li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin-bottom: 8px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            transition: all 0.3s ease;
+        }
+
+        .matched-subjects-list li:hover {
+            transform: translateX(5px);
+            background-color: #e9ecef;
+        }
+
+        .subject-name {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .achievement-rate {
+            color: #008080;
+            font-weight: bold;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background-color: rgba(0, 128, 128, 0.1);
+        }
+
+        .details-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            background-color: white;
+        }
+
+        .details-table th,
+        .details-table td {
+            padding: 2px 8px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 0.95em;
+            line-height: 1.2;
+        }
+
+        .details-table th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .details-table tr {
+            height: 24px;
+        }
+
+        .details-table tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .status-cell {
+            text-align: center;
+            width: 80px;
+            padding: 4px;
+        }
+
+        .status-cell.achieved {
+            color: #28a745;
+            background-color: rgba(40, 167, 69, 0.1);
+        }
+
+        .status-cell.not-achieved {
+            color: #dc3545;
+            background-color: rgba(220, 53, 69, 0.1);
+        }
+
+        .status-icon {
+            font-size: 1.1em;
+            font-weight: bold;
+            line-height: 1;
+        }
+
+        #subjectChart {
+            margin-top: 10px;
+            max-height: 300px;
+        }
+
+        .section-content {
+            margin: 15px 0;
+            line-height: 1.8;
+            padding-left: 20px;
+        }
+        
+        /* 불릿 포인트 스타일 */
+        .section-content > * {
+            display: block;
+            margin: 12px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+        
+        /* 불릿 포인트 기호 스타일 */
+        .section-content > *:before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #666;
+        }
+        
+        /* 줄바꿈 스타일 */
+        .section-content br {
+            display: block;
+            margin: 8px 0;
+            content: "";
+        }
+        
+        /* 분석 내용 스타일 */
+        .analysis-content {
+            color: #34495e;
+            line-height: 1.8;
+            white-space: pre-line;  /* 줄바꿈 보존 */
+        }
+
+        /* 채팅 분석 보고서 스타일 */
+        .chat-report {
+            font-family: 'Pretendard', 'Noto Sans KR', sans-serif;
+            line-height: 1.7;
+            color: #2c3e50;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+        }
+        
+        .chat-report h1 {
+            font-size: 26px;
+            color: #ff6b2b;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #ff6b2b;
+            font-weight: 600;
+            text-align: center;
+        }
+        
+        .chat-report h2 {
+            font-size: 22px;
+            color: #ff6b2b;
+            margin: 30px 0 20px 0;
+            padding: 12px 16px;
+            background: linear-gradient(to right, rgba(255, 107, 43, 0.1), transparent);
+            border-radius: 8px;
+            font-weight: 500;
+        }
+        
+        .chat-report h3 {
+            font-size: 18px;
+            color: #ff6b2b;
+            margin: 25px 0 15px 0;
+            font-weight: 500;
+            padding-left: 16px;
+            border-left: 3px solid #ff6b2b;
+        }
+
+        .chat-report .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .chat-report .stat-card {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            text-align: center;
+            border: 1px solid rgba(255, 107, 43, 0.2);
+        }
+
+        .chat-report .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ff6b2b;
+            margin: 10px 0;
+        }
+
+        .chat-report .stat-label {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .chat-report .chart-container {
+            margin: 30px 0;
+            padding: 20px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+        
+        .chat-report ul {
+            list-style-type: none;
+            padding: 15px 20px;
+            margin: 15px 0;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+        
+        .chat-report li {
+            margin: 12px 0;
+            position: relative;
+            padding: 12px 16px 12px 24px;
+            background: #fff;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+        
+        .chat-report li:before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #ff6b2b;
+            font-weight: bold;
+        }
+        
+        .risk-high {
+            color: #d93025;
+            background-color: #fff;
+            padding: 12px 16px;
+            border-radius: 6px;
+            border-left: 3px solid #d93025;
+            margin: 8px 0;
+        }
+        
+        .risk-medium {
+            color: #ff6b2b;
+            background-color: #fff;
+            padding: 12px 16px;
+            border-radius: 6px;
+            border-left: 3px solid #ff6b2b;
+            margin: 8px 0;
+        }
+        
+        .risk-low {
+            color: #188038;
+            background-color: #fff;
+            padding: 12px 16px;
+            border-radius: 6px;
+            border-left: 3px solid #188038;
+            margin: 8px 0;
+        }
+        
+        .feedback-negative {
+            color: #d93025;
+            background-color: #fff;
+            padding: 12px 16px;
+            border-radius: 6px;
+            border-left: 3px solid #d93025;
+            margin: 8px 0;
+        }
+        
+        .feedback-positive {
+            color: #188038;
+            background-color: #fff;
+            padding: 12px 16px;
+            border-radius: 6px;
+            border-left: 3px solid #188038;
+            margin: 8px 0;
+        }
+        
+        .section-divider {
+            border: none;
+            height: 1px;
+            background: linear-gradient(to right, rgba(255, 107, 43, 0.1), rgba(255, 107, 43, 0.3), rgba(255, 107, 43, 0.1));
+            margin: 30px 0;
+        }
+
+        .chat-report .summary-box {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            margin: 20px 0;
+            border: 1px solid rgba(255, 107, 43, 0.2);
+        }
+
+        .chat-report .summary-title {
+            color: #ff6b2b;
+            font-size: 18px;
+            font-weight: 500;
+            margin-bottom: 15px;
+        }
+
+        .empty-section {
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            color: #666;
+            text-align: center;
+            font-style: italic;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>강의 분석기</h1>
+        
+        <div class="upload-form">
+            <form id="analysisForm">
+                <div class="form-group">
+                    <label for="vttFile">VTT 파일</label>
+                    <input type="file" id="vttFile" name="vtt_file" accept=".vtt" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="curriculum_file">커리큘럼 파일 선택 (JSON 또는 Excel)</label>
+                    <input type="file" id="curriculum_file" name="curriculum_file" accept=".json,.xlsx,.xls" required>
+                    <small class="file-info">* JSON 파일 또는 Excel 파일(.xlsx, .xls)을 업로드해주세요.</small>
+                </div>
+
+                <button type="submit" class="submit-btn">분석하기</button>
+            </form>
+        </div>
+
+        <div class="upload-form">
+            <h3>채팅 기록 분석</h3>
+            <form id="chatForm">
+                <div class="form-group">
+                    <label for="chatFile">채팅 기록 파일</label>
+                    <input type="file" id="chatFile" name="chat_file" accept=".txt" required>
+                    <small class="file-info">* 텍스트 파일(.txt) 형식의 채팅 기록을 업로드해주세요.</small>
+                </div>
+
+                <button type="submit" class="submit-btn">채팅 분석하기</button>
+            </form>
+        </div>
+
+        <div id="loadingSpinner" class="loading-spinner hidden">
+            <div class="spinner"></div>
+            <p id="progressMessage">분석을 시작합니다...</p>
+        </div>
+
+        <div id="results" class="results hidden">
+            <div class="result-section">
+                <h2>강의 내용 요약 (VTT 기반)</h2>
+                <div class="analysis-card">
+                    <div id="vttAnalysis" class="analysis-content"></div>
+                </div>
+            </div>
+            
+            <div class="result-section curriculum-section">
+                <h2>커리큘럼 매칭 분석</h2>
+                <div class="analysis-card">
+                    <h3>🎯 매칭된 교과목</h3>
+                    <div id="matchedSubjects" class="analysis-content"></div>
+                </div>
+                <div class="analysis-card">
+                    <h3>📊 세부 매칭 결과</h3>
+                    <div id="matchingDetails" class="analysis-content"></div>
+                </div>
+                <div class="analysis-card">
+                    <h3>📈 교과목별 달성도</h3>
+                    <div class="analysis-content">
+                        <canvas id="subjectChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="chatResults" class="results hidden">
+            <div class="result-section">
+                <h2>채팅 기록 분석</h2>
+                <div class="analysis-card">
+                    <div id="chatAnalysis" class="analysis-content"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let subjectChart = null;  // 전역 변수로 차트 객체 선언
+
+        function createChart(matchedSubjects) {
+            const canvas = document.getElementById('subjectChart');
+            if (!canvas) {
+                console.error('차트를 그릴 canvas 요소를 찾을 수 없습니다.');
+                return;
+            }
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                console.error('canvas context를 가져올 수 없습니다.');
+                return;
+            }
+            
+            // 기존 차트 제거
+            if (subjectChart) {
+                subjectChart.destroy();
+            }
+            
+            // 매칭된 교과목이 없는 경우 처리
+            if (!matchedSubjects || matchedSubjects.length === 0) {
+                console.log('매칭된 교과목이 없습니다.');
+                return;
+            }
+            
+            const labels = matchedSubjects.map(subject => subject.name);
+            const data = matchedSubjects.map(subject => subject.achievement_rate);
+            
+            subjectChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '달성도 (%)',
+                        data: data,
+                        backgroundColor: 'rgba(255, 159, 64, 0.6)',
+                        borderColor: 'rgba(255, 159, 64, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: {
+                                font: {
+                                    size: 14
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function generateDetailsTableRows(detailsMatches) {
+            let rows = '';
+            for (const [subject, matchInfo] of Object.entries(detailsMatches)) {
+                matchInfo.matches.forEach((achieved, index) => {
+                    rows += `
+                        <tr>
+                            <td>${subject}</td>
+                            <td>${matchInfo.detail_texts[index]}</td>
+                            <td class="status-cell ${achieved ? 'achieved' : 'not-achieved'}">
+                                ${achieved ? 
+                                    '<span class="status-icon">✓</span>' : 
+                                    '<span class="status-icon">✗</span>'}
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            return rows;
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('analysisForm');
+            const chatForm = document.getElementById('chatForm');
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            const results = document.getElementById('results');
+            const chatResults = document.getElementById('chatResults');
+            const progressMessage = document.getElementById('progressMessage');
+
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(form);
+                
+                if (!formData.get('vtt_file') || !formData.get('curriculum_file')) {
+                    alert('모든 파일을 선택해주세요.');
+                    return;
+                }
+
+                loadingSpinner.classList.remove('hidden');
+                results.classList.add('hidden');
+                progressMessage.textContent = "분석을 시작합니다...";
+                
+                try {
+                    const response = await fetch('/analyze', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('서버 오류가 발생했습니다.');
+                    }
+
+                    const data = await response.json();
+                    
+                    // 진행 상황 메시지 업데이트
+                    if (data.progress) {
+                        progressMessage.textContent = data.progress;
+                    }
+                    
+                    // VTT 분석 결과를 표시
+                    document.getElementById('vttAnalysis').innerHTML = formatVttAnalysis(data.vtt_analysis);
+                    
+                    // 커리큘럼 분석 결과 표시
+                    displayCurriculumAnalysis(data);
+                    
+                    results.classList.remove('hidden');
+                } catch (error) {
+                    alert('오류가 발생했습니다: ' + error.message);
+                } finally {
+                    loadingSpinner.classList.add('hidden');
+                }
+            });
+
+            // 채팅 분석 폼 이벤트 리스너
+            chatForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(chatForm);
+                
+                if (!formData.get('chat_file')) {
+                    alert('채팅 파일을 선택해주세요.');
+                    return;
+                }
+
+                loadingSpinner.classList.remove('hidden');
+                chatResults.classList.add('hidden');
+                progressMessage.textContent = "채팅 분석을 시작합니다...";
+                
+                try {
+                    const response = await fetch('/analyze_chat', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('서버 오류가 발생했습니다.');
+                    }
+
+                    const data = await response.json();
+                    
+                    if (data.progress) {
+                        progressMessage.textContent = data.progress;
+                    }
+                    
+                    document.getElementById('chatAnalysis').innerHTML = formatVttAnalysis(data.chat_analysis);
+                    chatResults.classList.remove('hidden');
+                } catch (error) {
+                    alert('오류가 발생했습니다: ' + error.message);
+                } finally {
+                    loadingSpinner.classList.add('hidden');
+                }
+            });
+        });
+
+        function formatVttAnalysis(content) {
+            // 채팅 분석 보고서 형식으로 변환
+            let formattedContent = content
+                .replace('[채팅 분석 보고서]', '<h1>채팅 분석 보고서</h1>')
+                // 단순히 숫자와 점으로만 이루어진 라인 제거
+                .replace(/^\d+\.\s*$/gm, '')
+                .trim();
+
+            // 섹션 분리 및 병합을 위한 객체
+            const sectionContents = {
+                '위험 발언 분석': [],
+                '수업 관련 피드백': [],
+                '긍정적인 상호작용': []
+            };
+
+            // 섹션 분리
+            const sections = formattedContent.split(/(?=\d+\.\s)/);
+            sections.forEach(section => {
+                // 섹션 번호와 제목 추출
+                const titleMatch = section.match(/(\d+)\.\s*(.*?)(?:\n|$)/);
+                if (!titleMatch) return;
+
+                const [fullMatch, number, title] = titleMatch;
+                let sectionContent = section.replace(fullMatch, '').trim();
+
+                // 제목에서 숫자 제거하고 정리
+                let cleanTitle = title.replace(/\d+\.\d+\.\s*/, '').trim();
+                
+                // 불필요한 숫자만 있는 라인 제거
+                sectionContent = sectionContent
+                    .split('\n')
+                    .filter(line => !/^\d+\.\s*$/.test(line))
+                    .join('\n')
+                    .trim();
+
+                // 섹션 제목 결정 및 내용 병합
+                let sectionTitle;
+                if (title.includes('위험 발언')) {
+                    sectionTitle = '위험 발언 분석';
+                } else if (title.includes('수업 불만') || title.includes('수업 관련')) {
+                    sectionTitle = '수업 관련 피드백';
+                } else if (title.includes('긍정적')) {
+                    sectionTitle = '긍정적인 상호작용';
+                }
+
+                if (sectionTitle && sectionContent) {
+                    sectionContents[sectionTitle].push(sectionContent);
+                }
+            });
+
+            // 병합된 섹션으로 HTML 생성
+            let processedContent = '';
+            for (const [title, contents] of Object.entries(sectionContents)) {
+                if (contents.length === 0) {
+                    // 빈 섹션 처리
+                    processedContent += `
+                        <h2>${title}</h2>
+                        <div class="empty-section">${title}에 해당하는 내용이 발견되지 않았습니다.</div>
+                    `;
+                } else {
+                    // 내용이 있는 섹션 처리
+                    const mergedContent = contents.join('\n').trim();
+                    processedContent += `<h2>${title}</h2>${mergedContent}`;
+                }
+            }
+
+            // 통계 섹션 추가
+            const statsHtml = `
+                <div class="stats-container">
+                    <div class="stat-card">
+                        <div class="stat-label">위험 발언 수</div>
+                        <div class="stat-number">${(content.match(/위험 수준/g) || []).length}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">부정적 피드백</div>
+                        <div class="stat-number">${(content.match(/부정적/g) || []).length}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">긍정적 피드백</div>
+                        <div class="stat-number">${(content.match(/긍정적/g) || []).length}</div>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="feedbackChart"></canvas>
+                </div>`;
+
+            processedContent = processedContent + statsHtml;
+
+            // 섹션별 스타일 적용
+            processedContent = processedContent
+                .replace(/•\s([^<\n]+)/g, (match, p1) => {
+                    if (p1.includes('위험 수준: 상')) {
+                        return `<li class="risk-high">${p1}</li>`;
+                    } else if (p1.includes('위험 수준: 중')) {
+                        return `<li class="risk-medium">${p1}</li>`;
+                    } else if (p1.includes('위험 수준: 하')) {
+                        return `<li class="risk-low">${p1}</li>`;
+                    } else if (p1.includes('부정적')) {
+                        return `<li class="feedback-negative">${p1}</li>`;
+                    } else if (p1.includes('긍정적')) {
+                        return `<li class="feedback-positive">${p1}</li>`;
+                    }
+                    return `<li>${p1}</li>`;
+                });
+
+            // 각 섹션을 ul 태그로 감싸기
+            processedContent = processedContent
+                .replace(/<li>/g, '<ul><li>')
+                .replace(/<\/li>\s*(?=<h|$)/g, '</li></ul>');
+            
+            // 섹션 구분선 추가
+            processedContent = processedContent
+                .replace(/<\/ul>\s*<h2>/g, '</ul><div class="section-divider"></div><h2>');
+            
+            const wrappedContent = `<div class="chat-report">${processedContent}</div>`;
+
+            // 차트 생성
+            setTimeout(() => {
+                const ctx = document.getElementById('feedbackChart')?.getContext('2d');
+                if (ctx) {
+                    new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['위험 발언', '부정적 피드백', '긍정적 피드백'],
+                            datasets: [{
+                                data: [
+                                    (content.match(/위험 수준/g) || []).length,
+                                    (content.match(/부정적/g) || []).length,
+                                    (content.match(/긍정적/g) || []).length
+                                ],
+                                backgroundColor: [
+                                    '#d93025',
+                                    '#ff6b2b',
+                                    '#188038'
+                                ]
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    position: 'bottom'
+                                }
+                            }
+                        }
+                    });
+                }
+            }, 100);
+
+            return wrappedContent;
+        }
+
+        function formatContent(content) {
+            return content
+                .split(/(?=•)/)  // 불릿 포인트를 기준으로 분할
+                .map(item => item.trim())  // 각 항목의 앞뒤 공백 제거
+                .filter(item => item)  // 빈 항목 제거
+                .join('<br><br>')  // 항목 사이에 두 줄 간격 추가
+                .replace(/^(<br>)+|(<br>)+$/g, '')  // 시작과 끝의 불필요한 줄바꿈 제거
+                .trim();
+        }
+
+        function displayCurriculumAnalysis(data) {
+            const curriculumSection = document.querySelector('.result-section');
+            curriculumSection.style.display = 'block';
+            
+            // 매칭된 교과목 표시
+            const matchedSubjectsDiv = document.getElementById('matchedSubjects');
+            matchedSubjectsDiv.innerHTML = '';
+            
+            if (data.curriculum_analysis.matched_subjects && data.curriculum_analysis.matched_subjects.length > 0) {
+                const subjectsList = document.createElement('ul');
+                subjectsList.className = 'matched-subjects-list';
+                
+                data.curriculum_analysis.matched_subjects.forEach(subject => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <span class="subject-name">${subject.name}</span>
+                        <span class="achievement-rate">달성도: ${subject.achievement_rate}%</span>
+                    `;
+                    subjectsList.appendChild(li);
+                });
+                
+                matchedSubjectsDiv.appendChild(subjectsList);
+            } else {
+                matchedSubjectsDiv.innerHTML = '<p>매칭된 교과목이 없습니다.</p>';
+            }
+            
+            // 세부내용 달성도 표시
+            const detailsMatchesDiv = document.getElementById('matchingDetails');
+            detailsMatchesDiv.innerHTML = '';
+            
+            if (data.curriculum_analysis.details_matches) {
+                const detailsTable = document.createElement('table');
+                detailsTable.className = 'details-table';
+                detailsTable.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>교과목</th>
+                            <th>세부내용</th>
+                            <th>달성 여부</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${generateDetailsTableRows(data.curriculum_analysis.details_matches)}
+                    </tbody>
+                `;
+                detailsMatchesDiv.appendChild(detailsTable);
+            }
+            
+            // 차트 생성
+            createChart(data.curriculum_analysis.matched_subjects);
+        }
+
+        // 분석 결과 카드의 스타일도 수정
+        const styleTag = document.createElement('style');
+        styleTag.textContent = `
+            .analysis-content {
+                color: #34495e;
+                line-height: 1.8;
+            }
+            
+            .analysis-content br {
+                display: block;
+                margin: 8px 0;  /* 줄바꿈 간격 조정 */
+                content: "";
+            }
+        `;
+        document.head.appendChild(styleTag);
+    </script>
+</body>
+</html> 
