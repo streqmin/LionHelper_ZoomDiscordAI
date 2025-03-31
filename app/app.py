@@ -20,9 +20,11 @@ anthropic_api_key = os.getenv('ANTHROPIC_API_KEY')
 if not anthropic_api_key:
     raise ValueError("ANTHROPIC_API_KEY environment variable is not set")
 
+# API 버전 설정
+os.environ["ANTHROPIC_API_VERSION"] = "2023-06-01"
+
 # Anthropic 클라이언트 초기화
 client = anthropic.Client(api_key=anthropic_api_key)
-anthropic.API_VERSION = "2023-06-01"  # API 버전 설정
 
 # API 키 유효성 검증
 try:
