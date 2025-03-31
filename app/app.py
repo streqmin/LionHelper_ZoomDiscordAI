@@ -29,19 +29,12 @@ try:
     
     # 간단한 API 호출로 키 유효성 검증
     response = client.completion(
-        model="claude-3-haiku-20240307",
+        prompt=f"\n\nHuman: test\n\nAssistant:",
+        model="claude-instant-1",
         max_tokens_to_sample=1,
-        prompt=f"\n\nHuman: test\n\nAssistant:"
+        temperature=0
     )
     print("API 키 유효성 검증 성공")
-except anthropic.NotFoundError as e:
-    print(f"모델 버전 오류: {str(e)}")
-    print("사용 가능한 모델 목록:")
-    print("- claude-3-haiku-20240307")
-    raise ValueError("지원되지 않는 모델 버전입니다. 모델 버전을 확인해주세요.")
-except anthropic.AuthenticationError as e:
-    print(f"인증 오류: {str(e)}")
-    raise ValueError("API 키가 유효하지 않습니다. API 키를 확인해주세요.")
 except Exception as e:
     print(f"API 키 유효성 검증 실패: {str(e)}")
     print(f"에러 타입: {type(e).__name__}")
@@ -91,10 +84,10 @@ def analyze_text_chunk(chunk):
 각 섹션은 bullet point(•)로 작성하고, 중요한 내용만 간단히 정리해주세요."""
 
         response = client.completion(
-            model="claude-3-haiku-20240307",
+            prompt=f"\n\nHuman: {system_prompt}\n\n강의 내용:\n{chunk}\n\nAssistant:",
+            model="claude-instant-1",
             max_tokens_to_sample=4096,
-            temperature=0.7,
-            prompt=f"\n\nHuman: {system_prompt}\n\n강의 내용:\n{chunk}\n\nAssistant:"
+            temperature=0.7
         )
         
         if response and hasattr(response, 'completion'):
@@ -102,8 +95,6 @@ def analyze_text_chunk(chunk):
         return "분석 결과를 가져올 수 없습니다."
     except Exception as e:
         print(f"텍스트 분석 중 오류 발생: {str(e)}")
-        if "not_found_error" in str(e):
-            print("API 모델 버전이 올바르지 않습니다. Anthropic API 문서를 확인해주세요.")
         return "분석 중 오류가 발생했습니다."
 
 def combine_analyses(analyses):
