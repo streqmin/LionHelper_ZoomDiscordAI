@@ -627,6 +627,14 @@ def analyze_chat_log(chat_content):
 def index():
     return render_template('index.html')
 
+@app.route('/vtt-analysis')
+def vtt_analysis():
+    return render_template('vtt_analysis.html')
+
+@app.route('/chat-analysis')
+def chat_analysis():
+    return render_template('chat_analysis.html')
+
 @app.route('/analyze', methods=['POST'])
 def analyze():
     try:

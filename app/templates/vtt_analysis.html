@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VTT 파일 및 커리큘럼 분석 - AI 강의 분석기</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .nav-bar {
+            background-color: #fff;
+            padding: 15px 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+
+        .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-title {
+            color: #ff6b2b;
+            text-decoration: none;
+            font-size: 1.4em;
+            font-weight: 600;
+        }
+
+        .nav-back {
+            color: #666;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .nav-back:hover {
+            color: #ff6b2b;
+        }
+
+        .details-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background-color: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .details-table th,
+        .details-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        .details-table th {
+            background-color: #ff6b2b;
+            color: white;
+            font-weight: 500;
+        }
+
+        .details-table tr:hover {
+            background-color: #fff5e6;
+        }
+
+        .status-cell {
+            text-align: center;
+            width: 100px;
+        }
+
+        .status-icon {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            line-height: 24px;
+            text-align: center;
+            border-radius: 50%;
+            font-weight: bold;
+        }
+
+        .achieved .status-icon {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .not-achieved .status-icon {
+            background-color: #f44336;
+            color: white;
+        }
+
+        .matched-subjects-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .matched-subjects-list li {
+            background-color: #fff5e6;
+            border-left: 4px solid #ff6b2b;
+            margin-bottom: 15px;
+            padding: 15px 20px;
+            border-radius: 0 8px 8px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: transform 0.2s ease;
+        }
+
+        .matched-subjects-list li:hover {
+            transform: translateX(5px);
+        }
+
+        .matched-subjects-list .subject-name {
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 1.1em;
+        }
+
+        .matched-subjects-list .achievement-rate {
+            background-color: #ff6b2b;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: 500;
+            font-size: 0.9em;
+        }
+
+        .upload-section {
+            background-color: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 10px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .form-group input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+        }
+
+        .btn-primary {
+            background-color: #ff6b2b;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 500;
+            transition: background-color 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            background-color: #ff5b1b;
+        }
+
+        .loading-spinner {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #ff6b2b;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .chat-report {
+            background-color: #fff;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            margin-bottom: 30px;
+        }
+
+        .summary-section {
+            background-color: #fff;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+
+        .summary-section h2 {
+            color: #ff6b2b;
+            font-size: 1.3em;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid rgba(255, 107, 43, 0.2);
+        }
+
+        .summary-section ul {
+            list-style: none;
+            padding-left: 20px;
+            margin: 0;
+        }
+
+        .summary-section li {
+            position: relative;
+            padding: 8px 0 8px 25px;
+            line-height: 1.6;
+            color: #2c3e50;
+            margin-bottom: 8px;
+            background-color: #fff;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .summary-section li:before {
+            content: "•";
+            color: #ff6b2b;
+            position: absolute;
+            left: 0;
+            font-size: 1.2em;
+            line-height: 1.4;
+        }
+
+        .summary-section li:hover {
+            background-color: #fff5e6;
+            padding-left: 30px;
+            transform: translateX(5px);
+        }
+
+        /* VTT 분석 결과 영역의 들여쓰기 스타일 */
+        #vttAnalysis .summary-section {
+            padding-left: 40px;
+            border-left: 4px solid rgba(255, 107, 43, 0.1);
+            margin-left: 20px;
+            transition: border-left-color 0.3s ease;
+        }
+
+        #vttAnalysis .summary-section:hover {
+            border-left-color: #ff6b2b;
+        }
+
+        #vttAnalysis .summary-section h2 {
+            margin-left: -40px;
+            padding-left: 36px;
+            position: relative;
+        }
+
+        #vttAnalysis .summary-section h2:before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 2px;
+            background-color: #ff6b2b;
+        }
+    </style>
+</head>
+<body>
+    <nav class="nav-bar">
+        <div class="nav-container">
+            <a href="/" class="nav-back">
+                <i class="fas fa-arrow-left"></i>
+                메인으로 돌아가기
+            </a>
+            <span class="nav-title">VTT 파일 및 커리큘럼 분석</span>
+            <div></div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="upload-section">
+            <form id="upload-form" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="vtt-file">VTT 파일 선택:</label>
+                    <input type="file" id="vtt-file" name="vtt_file" accept=".vtt" required>
+                </div>
+                <div class="form-group">
+                    <label for="curriculum-file">커리큘럼 파일 선택 (Excel 또는 JSON):</label>
+                    <input type="file" id="curriculum-file" name="curriculum_file" accept=".xlsx,.xls,.json" required>
+                </div>
+                <button type="submit" class="btn-primary">분석 시작</button>
+            </form>
+        </div>
+
+        <div id="loading-spinner" class="loading-spinner" style="display: none;">
+            <div class="spinner"></div>
+            <p>분석 중입니다...</p>
+        </div>
+
+        <div id="analysis-result" class="result-section">
+            <h2>강의 내용 요약 (VTT 기반)</h2>
+            <div id="vttAnalysis" class="chat-report"></div>
+        </div>
+
+        <!-- 커리큘럼 매칭 분석 결과 -->
+        <div id="curriculum-analysis-result" class="result-section" style="display: none;">
+            <h2>커리큘럼 매칭 분석</h2>
+            <div class="chat-report">
+                <!-- 종합 분석 결과 영역 -->
+                <div class="summary-section">
+                    <h2>강의 내용 종합 분석</h2>
+                    <p id="curriculum-summary-text"></p>
+                </div>
+                
+                <!-- 매칭된 교과목 영역 -->
+                <div class="summary-section">
+                    <h2>교과목별 달성도</h2>
+                    <div id="curriculum-matches-content"></div>
+                </div>
+                
+                <!-- 세부 매칭 결과 -->
+                <div class="summary-section">
+                    <h2>세부 매칭 결과</h2>
+                    <div id="matchingDetails"></div>
+                </div>
+
+                <!-- 교과목별 달성도 차트 -->
+                <div class="summary-section">
+                    <h2>교과목별 달성도 차트</h2>
+                    <canvas id="subjectChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let subjectChart = null;  // 전역 변수로 차트 객체 선언
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('upload-form');
+            const loadingSpinner = document.getElementById('loading-spinner');
+            const results = document.getElementById('analysis-result');
+            const progressMessage = document.querySelector('#loading-spinner p');
+
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(form);
+                
+                if (!formData.get('vtt_file') || !formData.get('curriculum_file')) {
+                    alert('모든 파일을 선택해주세요.');
+                    return;
+                }
+
+                loadingSpinner.style.display = 'block';
+                results.style.display = 'none';
+                progressMessage.textContent = "VTT 파일을 읽는 중...";
+                
+                try {
+                    const response = await fetch('/analyze', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('서버 오류가 발생했습니다.');
+                    }
+
+                    progressMessage.textContent = "VTT 내용과 커리큘럼을 분석하는 중...";
+                    const data = await response.json();
+                    
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+
+                    progressMessage.textContent = "분석 결과를 처리하는 중...";
+                    
+                    // VTT 분석 결과를 표시
+                    document.getElementById('vttAnalysis').innerHTML = formatVttAnalysis(data.vtt_analysis);
+                    
+                    // 커리큘럼 분석 결과 표시
+                    displayCurriculumAnalysis(data);
+                    
+                    results.style.display = 'block';
+                    
+                    // 분석 완료 메시지 표시 후 스피너 숨기기
+                    progressMessage.textContent = "분석이 완료되었습니다!";
+                    setTimeout(() => {
+                        loadingSpinner.style.display = 'none';
+                    }, 1000);
+                } catch (error) {
+                    progressMessage.textContent = "오류가 발생했습니다";
+                    alert('오류가 발생했습니다: ' + error.message);
+                    loadingSpinner.style.display = 'none';
+                }
+            });
+        });
+
+        function formatVttAnalysis(content) {
+            const sections = content.split(/(?=\d\. )/);
+            let formattedContent = '';
+
+            sections.forEach(section => {
+                if (section.trim()) {
+                    const sectionTitle = section.match(/^\d\. (.+)$/m)?.[1] || '';
+                    const sectionContent = section.replace(/^\d\. .+\n/m, '').trim();
+                    
+                    formattedContent += `
+                        <div class="summary-section">
+                            <h2>${sectionTitle}</h2>
+                            <ul>
+                                ${sectionContent.split('\n').map(line => {
+                                    if (line.trim().startsWith('•') || line.trim().startsWith('-')) {
+                                        return `<li>${line.trim().replace(/^[•-]\s*/, '')}</li>`;
+                                    }
+                                    return '';
+                                }).filter(Boolean).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+            });
+
+            return formattedContent;
+        }
+
+        function createChart(matchedSubjects) {
+            const canvas = document.getElementById('subjectChart');
+            if (!canvas) {
+                console.error('차트를 그릴 canvas 요소를 찾을 수 없습니다.');
+                return;
+            }
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                console.error('canvas context를 가져올 수 없습니다.');
+                return;
+            }
+            
+            // 기존 차트 제거
+            if (subjectChart) {
+                subjectChart.destroy();
+            }
+            
+            // 매칭된 교과목이 없는 경우 처리
+            if (!matchedSubjects || matchedSubjects.length === 0) {
+                console.log('매칭된 교과목이 없습니다.');
+                return;
+            }
+            
+            const labels = matchedSubjects.map(subject => subject.name);
+            const data = matchedSubjects.map(subject => subject.achievement_rate);
+            
+            subjectChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '달성도 (%)',
+                        data: data,
+                        backgroundColor: 'rgba(255, 159, 64, 0.6)',
+                        borderColor: 'rgba(255, 159, 64, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: {
+                                font: {
+                                    size: 14
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function generateDetailsTableRows(detailsMatches) {
+            let rows = '';
+            for (const [subject, matchInfo] of Object.entries(detailsMatches)) {
+                matchInfo.matches.forEach((achieved, index) => {
+                    rows += `
+                        <tr>
+                            <td>${subject}</td>
+                            <td>${matchInfo.detail_texts[index]}</td>
+                            <td class="status-cell ${achieved ? 'achieved' : 'not-achieved'}">
+                                ${achieved ? 
+                                    '<span class="status-icon">✓</span>' : 
+                                    '<span class="status-icon">✗</span>'}
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            return rows;
+        }
+
+        function displayCurriculumAnalysis(data) {
+            const resultSection = document.getElementById('curriculum-analysis-result');
+            const summaryText = document.getElementById('curriculum-summary-text');
+            const matchesContent = document.getElementById('curriculum-matches-content');
+            
+            // 종합 분석 결과 표시
+            if (data.curriculum_analysis && data.curriculum_analysis.summary) {
+                summaryText.textContent = data.curriculum_analysis.summary;
+            }
+            
+            // 교과목별 달성도 표시
+            if (data.curriculum_analysis && data.curriculum_analysis.matched_subjects) {
+                const subjectsList = document.createElement('ul');
+                subjectsList.className = 'matched-subjects-list';
+                
+                data.curriculum_analysis.matched_subjects.forEach(subject => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <span class="subject-name">${subject.name}</span>
+                        <span class="achievement-rate">${subject.achievement_rate}% 달성</span>
+                    `;
+                    subjectsList.appendChild(li);
+                });
+                
+                matchesContent.innerHTML = '';
+                matchesContent.appendChild(subjectsList);
+            }
+            
+            resultSection.style.display = 'block';
+            
+            // 세부내용 달성도 표시
+            const detailsMatchesDiv = document.getElementById('matchingDetails');
+            detailsMatchesDiv.innerHTML = '';
+            
+            if (data.curriculum_analysis.details_matches) {
+                const detailsTable = document.createElement('table');
+                detailsTable.className = 'details-table';
+                detailsTable.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>교과목</th>
+                            <th>세부내용</th>
+                            <th>달성 여부</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${generateDetailsTableRows(data.curriculum_analysis.details_matches)}
+                    </tbody>
+                `;
+                detailsMatchesDiv.appendChild(detailsTable);
+            }
+            
+            // 차트 생성
+            createChart(data.curriculum_analysis.matched_subjects);
+        }
+    </script>
+</body>
+</html> 
