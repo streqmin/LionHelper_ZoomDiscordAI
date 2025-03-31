@@ -6,6 +6,14 @@
     <title>채팅 기록 분석 - AI 강의 분석기</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
+        /* 기본 레이아웃 */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* 네비게이션 */
         .nav-bar {
             background-color: #fff;
             padding: 15px 0;
@@ -24,7 +32,6 @@
 
         .nav-title {
             color: #ff6b2b;
-            text-decoration: none;
             font-size: 1.4em;
             font-weight: 600;
         }
@@ -41,6 +48,7 @@
             color: #ff6b2b;
         }
 
+        /* 업로드 섹션 */
         .upload-section {
             background-color: white;
             padding: 30px;
@@ -75,6 +83,7 @@
             font-size: 0.9em;
         }
 
+        /* 버튼 스타일 */
         .btn-primary {
             background-color: #ff6b2b;
             color: white;
@@ -91,6 +100,7 @@
             background-color: #ff5b1b;
         }
 
+        /* 로딩 스피너 */
         .loading-spinner {
             text-align: center;
             padding: 40px;
@@ -109,6 +119,101 @@
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+
+        /* 분석 결과 스타일 */
+        .chat-report {
+            background-color: #fff;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .summary-section {
+            padding: 20px;
+            margin-bottom: 25px;
+            border-left: 4px solid rgba(255, 107, 43, 0.1);
+            transition: border-left-color 0.3s ease;
+        }
+
+        .summary-section:hover {
+            border-left-color: #ff6b2b;
+        }
+
+        .summary-section h2 {
+            color: #ff6b2b;
+            font-size: 1.3em;
+            margin: 0 0 20px -20px;
+            padding: 0 0 10px 20px;
+            border-bottom: 2px solid rgba(255, 107, 43, 0.2);
+            position: relative;
+        }
+
+        .summary-section h2:before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 12px;
+            height: 2px;
+            background-color: #ff6b2b;
+        }
+
+        .summary-section ul {
+            list-style: none;
+            padding-left: 20px;
+            margin: 0;
+        }
+
+        .summary-section li {
+            position: relative;
+            padding: 8px 0 8px 25px;
+            line-height: 1.6;
+            color: #2c3e50;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .summary-section li:before {
+            content: "•";
+            color: #ff6b2b;
+            position: absolute;
+            left: 0;
+            font-size: 1.2em;
+            line-height: 1.4;
+        }
+
+        .summary-section li:hover {
+            background-color: #fff5e6;
+            padding-left: 30px;
+            transform: translateX(5px);
+        }
+
+        /* 계층 구조 스타일 */
+        .section-number {
+            color: #ff6b2b;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+
+        .subsection {
+            margin-left: 20px;
+            padding-left: 15px;
+            border-left: 2px solid rgba(255, 107, 43, 0.1);
+        }
+
+        .subsection-title {
+            color: #666;
+            font-size: 1.1em;
+            margin: 15px 0 10px 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .subsection-title .section-number {
+            font-size: 0.9em;
         }
     </style>
 </head>
@@ -141,18 +246,14 @@
             <p>분석 중입니다...</p>
         </div>
 
-        <div id="chat-analysis-result">
-            <div class="analysis-card">
-                <div id="chatAnalysis"></div>
-            </div>
-        </div>
+        <div id="chatAnalysis" class="chat-report" style="display: none;"></div>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const chatForm = document.getElementById('chat-form');
             const loadingSpinner = document.getElementById('loading-spinner');
-            const chatResults = document.getElementById('chat-analysis-result');
+            const chatResults = document.getElementById('chatAnalysis');
             const progressMessage = document.querySelector('#loading-spinner p');
 
             chatForm.addEventListener('submit', async function(e) {
@@ -187,7 +288,7 @@
                     }
 
                     progressMessage.textContent = "분석 결과를 처리하는 중...";
-                    document.getElementById('chatAnalysis').innerHTML = formatVttAnalysis(data.analysis);
+                    document.getElementById('chatAnalysis').innerHTML = formatChatAnalysis(data.analysis);
                     chatResults.style.display = 'block';
                     
                     progressMessage.textContent = "분석이 완료되었습니다!";
@@ -202,32 +303,53 @@
             });
         });
 
-        function formatVttAnalysis(content) {
+        function formatChatAnalysis(content) {
             const sections = content.split(/(?=\d\. )/);
             let formattedContent = '';
 
             sections.forEach(section => {
                 if (section.trim()) {
-                    const sectionTitle = section.match(/^\d\. (.+)$/m)?.[1] || '';
-                    const sectionContent = section.replace(/^\d\. .+\n/m, '').trim();
+                    const mainNumber = section.match(/^(\d+)\./)?.[1] || '';
+                    const mainTitle = section.match(/^\d+\. (.+)$/m)?.[1] || '';
+                    const sectionContent = section.replace(/^\d+\. .+\n/m, '').trim();
+                    
+                    if (!mainTitle) return;
+                    
+                    const subsections = sectionContent.split(/(?=\d+\.\d+ )/);
                     
                     formattedContent += `
                         <div class="summary-section">
-                            <h2>${sectionTitle}</h2>
-                            <ul>
-                                ${sectionContent.split('\n').map(line => {
-                                    if (line.trim().startsWith('•') || line.trim().startsWith('-')) {
-                                        return `<li>${line.trim().replace(/^[•-]\s*/, '')}</li>`;
-                                    }
-                                    return '';
-                                }).filter(Boolean).join('')}
-                            </ul>
+                            <h2><span class="section-number">${mainNumber}.</span>${mainTitle}</h2>
+                            ${subsections.map(subsection => {
+                                if (!subsection.trim()) return '';
+                                
+                                const subNumber = subsection.match(/^(\d+\.\d+) /)?.[1] || '';
+                                const subTitle = subsection.match(/^\d+\.\d+ (.+)$/m)?.[1] || '';
+                                const subContent = subsection.replace(/^\d+\.\d+ .+\n/m, '').trim();
+                                
+                                if (!subTitle || !subContent.trim()) return '';
+                                
+                                return `
+                                    <div class="subsection">
+                                        <div class="subsection-title">
+                                            <span class="section-number">${subNumber}</span>${subTitle}
+                                        </div>
+                                        <ul>
+                                            ${subContent.split('\n')
+                                                .map(line => line.trim())
+                                                .filter(line => line.startsWith('•') || line.startsWith('-'))
+                                                .map(line => `<li>${line.replace(/^[•-]\s*/, '')}</li>`)
+                                                .join('')}
+                                        </ul>
+                                    </div>
+                                `;
+                            }).join('')}
                         </div>
                     `;
                 }
             });
 
-            return `<div class="chat-report">${formattedContent}</div>`;
+            return formattedContent;
         }
     </script>
 </body>
