@@ -1,62 +1,86 @@
-# 강의 분석기
+# AI 강의 분석기
 
-VTT 파일과 커리큘럼 파일을 분석하여 강의 내용을 요약하고 분석하는 도구입니다.
+AI 기반의 강의 분석 도구로, VTT(자막) 파일과 커리큘럼을 분석하여 강의 내용을 요약하고 커리큘럼과의 매칭도를 평가합니다.
+
+## 주요 기능
+
+### 1. VTT 파일 분석
+- 강의 내용 자동 요약
+- 주요 토픽 추출
+- 강의 난이도 평가
+- 강의 내용을 세 가지 섹션으로 구분하여 표시:
+  - 강의 내용 요약
+  - 강의에서 어려웠던 점
+  - 강사의 위험 발언
+
+### 2. 커리큘럼 매칭 분석
+- 강의 내용과 커리큘럼 간의 매칭도 분석
+- 교과목별 달성도 평가
+- 시각적 차트를 통한 달성도 표시
+- 세부 매칭 결과 제공
+
+### 3. 채팅 기록 분석
+- 학습자 참여도 분석
+- 주요 질문과 피드백 추출
+- 학습 분위기 평가
+
+## UI 개선사항
+
+### 최근 업데이트
+1. 분석 결과 표시 영역 개선
+   - 불필요한 여백 제거
+   - 일관된 디자인 적용
+   - 가독성 향상을 위한 섹션 구분
+
+2. 커리큘럼 매칭 분석 결과 개선
+   - 강의 내용 종합 분석
+   - 교과목별 달성도 시각화
+   - 세부 매칭 결과 테이블 형식 개선
+   - 차트 시각화 기능 추가
+
+3. 스타일 통일성 강화
+   - 오렌지 계열의 일관된 컬러 스킴 적용
+   - 모든 섹션에 동일한 디자인 패턴 적용
+   - 반응형 디자인 지원
+
+## 사용된 기술
+- Backend: Python, Flask
+- Frontend: HTML, CSS, JavaScript
+- AI: Claude API (Anthropic)
+- 차트: Chart.js
+
+## 시스템 요구사항
+- Python 3.8 이상
+- 웹 브라우저 (Chrome, Firefox, Safari 최신 버전 권장)
+- Anthropic API 키
 
 ## 설치 및 실행 방법
-
-### 백엔드 설정
-
-1. Python 가상환경 생성 및 활성화:
+1. 저장소 클론
 ```bash
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+git clone [repository-url]
 ```
 
-2. 필요한 패키지 설치:
+2. 의존성 설치
 ```bash
-cd backend
 pip install -r requirements.txt
 ```
 
-3. OpenAI API 키 설정:
-`.env` 파일을 backend 디렉토리에 생성하고 다음 내용을 추가:
-```
-OPENAI_API_KEY=your_api_key_here
-```
-
-4. 백엔드 서버 실행:
+3. 환경 변수 설정
 ```bash
-uvicorn app.main:app --reload
+export ANTHROPIC_API_KEY=your_api_key
 ```
 
-### 프론트엔드 설정
-
-1. 필요한 패키지 설치:
+4. 서버 실행
 ```bash
-cd frontend
-npm install
+python app.py
 ```
 
-2. 개발 서버 실행:
-```bash
-npm run dev
+5. 웹 브라우저에서 접속
+```
+http://localhost:5000
 ```
 
-## 사용 방법
-
-1. 브라우저에서 http://localhost:5173 접속
-2. VTT 파일과 커리큘럼 파일 업로드
-3. "분석하기" 버튼 클릭
-4. 분석 결과 확인
-
-## 기능
-
-- VTT 파일 분석
-  - 강의 내용 요약
-  - 어려웠던 점 추출
-  - 위험한 표현 식별
-
-- 커리큘럼 분석
-  - 매칭된 단항 추출
-  - 게임 제작 신화 이론 관련성 분석 # zoom_analysis
-# ZoomDiscord_AI
+## 주의사항
+- VTT 파일은 UTF-8 인코딩이어야 합니다.
+- 커리큘럼 파일은 Excel(.xlsx, .xls) 또는 JSON 형식을 지원합니다.
+- 채팅 로그는 텍스트(.txt) 파일 형식이어야 합니다.
