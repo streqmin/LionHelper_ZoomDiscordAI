@@ -28,16 +28,16 @@ try:
     print(f"API 키: {anthropic_api_key[:5]}...")  # API 키의 처음 5자만 출력
     
     # 간단한 API 호출로 키 유효성 검증
-    response = client.messages.create(
-        model="claude-3-5-haiku-20241022",
-        max_tokens=1,
-        messages=[{"role": "user", "content": "test"}]
+    response = client.completion(
+        model="claude-3-haiku-20240307",
+        max_tokens_to_sample=1,
+        prompt=f"\n\nHuman: test\n\nAssistant:"
     )
     print("API 키 유효성 검증 성공")
 except anthropic.NotFoundError as e:
     print(f"모델 버전 오류: {str(e)}")
     print("사용 가능한 모델 목록:")
-    print("- claude-3-5-haiku-20241022")
+    print("- claude-3-haiku-20240307")
     raise ValueError("지원되지 않는 모델 버전입니다. 모델 버전을 확인해주세요.")
 except anthropic.AuthenticationError as e:
     print(f"인증 오류: {str(e)}")
@@ -90,16 +90,15 @@ def analyze_text_chunk(chunk):
 
 각 섹션은 bullet point(•)로 작성하고, 중요한 내용만 간단히 정리해주세요."""
 
-        response = client.messages.create(
-            model="claude-3-5-haiku-20241022",
-            max_tokens=4096,
+        response = client.completion(
+            model="claude-3-haiku-20240307",
+            max_tokens_to_sample=4096,
             temperature=0.7,
-            messages=[
-                {"role": "user", "content": f"{system_prompt}\n\n강의 내용:\n{chunk}"}
-            ]
+            prompt=f"\n\nHuman: {system_prompt}\n\n강의 내용:\n{chunk}\n\nAssistant:"
         )
-        if response and response.content and len(response.content) > 0:
-            return response.content[0].text
+        
+        if response and hasattr(response, 'completion'):
+            return response.completion
         return "분석 결과를 가져올 수 없습니다."
     except Exception as e:
         print(f"텍스트 분석 중 오류 발생: {str(e)}")
@@ -218,19 +217,17 @@ def extract_curriculum_topics(curriculum_content):
         
         print("Claude에 키워드 추출 요청")
         try:
-            response = client.messages.create(
-                model="claude-3-5-haiku-20241022",
-                max_tokens=4096,
+            response = client.completion(
+                model="claude-3-haiku-20240307",
+                max_tokens_to_sample=4096,
                 temperature=0.7,
-                messages=[
-                    {"role": "user", "content": f"{system_prompt}\n\n{json.dumps(subjects_json, ensure_ascii=False)}"}
-                ]
+                prompt=f"\n\nHuman: {system_prompt}\n\n{json.dumps(subjects_json, ensure_ascii=False)}\n\nAssistant:"
             )
             
-            if not response or not response.content:
+            if not response or not response.completion:
                 raise ValueError("API 응답이 비어있습니다.")
             
-            response_text = response.content[0].text.strip()
+            response_text = response.completion.strip()
             if not response_text:
                 raise ValueError("API 응답 텍스트가 비어있습니다.")
             
@@ -323,18 +320,16 @@ def analyze_curriculum_match(vtt_content, topics):
             """
             
             try:
-                response = client.messages.create(
-                    model="claude-3-5-haiku-20241022",
-                    max_tokens=4096,
+                response = client.completion(
+                    model="claude-3-haiku-20240307",
+                    max_tokens_to_sample=4096,
                     temperature=0.7,
-                    messages=[
-                        {"role": "user", "content": system_prompt}
-                    ]
+                    prompt=f"\n\nHuman: {system_prompt}\n\nAssistant:"
                 )
                 
-                if response and response.content:
+                if response and hasattr(response, 'completion'):
                     try:
-                        response_text = response.content[0].text.strip()
+                        response_text = response.completion.strip()
                         if not response_text:
                             raise ValueError("API 응답이 비어있습니다.")
                         
@@ -410,17 +405,15 @@ def analyze_curriculum_match(vtt_content, topics):
     """
     
     try:
-        summary_response = client.messages.create(
-            model="claude-3-5-haiku-20241022",
-            max_tokens=1000,
+        summary_response = client.completion(
+            model="claude-3-haiku-20240307",
+            max_tokens_to_sample=1000,
             temperature=0.7,
-            messages=[
-                {"role": "user", "content": summary_prompt}
-            ]
+            prompt=f"\n\nHuman: {summary_prompt}\n\nAssistant:"
         )
         
-        if summary_response and summary_response.content:
-            summary = summary_response.content[0].text.strip()
+        if summary_response and hasattr(summary_response, 'completion'):
+            summary = summary_response.completion.strip()
         else:
             summary = "강의 내용 분석 결과를 생성할 수 없습니다."
     except Exception as e:
@@ -604,17 +597,15 @@ def analyze_chat_log(chat_content):
         5. 보안 및 개인정보 보호 관점 고려
         """
         
-        response = client.messages.create(
-            model="claude-3-5-haiku-20241022",
-            max_tokens=4096,
+        response = client.completion(
+            model="claude-3-haiku-20240307",
+            max_tokens_to_sample=4096,
             temperature=0.7,
-            messages=[
-                {"role": "user", "content": f"{system_prompt}\n\n다음 채팅 기록을 분석해주세요:\n\n{chat_content}"}
-            ]
+            prompt=f"\n\nHuman: {system_prompt}\n\n다음 채팅 기록을 분석해주세요:\n\n{chat_content}\n\nAssistant:"
         )
         
-        if response and response.content and len(response.content) > 0:
-            return response.content[0].text
+        if response and hasattr(response, 'completion'):
+            return response.completion
         return "채팅 분석 결과를 가져올 수 없습니다."
     except Exception as e:
         print(f"채팅 분석 중 오류 발생: {str(e)}")
