@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, jsonify, Response
-import openai
+import anthropic
 import webvtt
 import os
 import traceback
@@ -15,27 +15,57 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# OpenAI 클라이언트 초기화
-openai_api_key = os.getenv("OPENAI_API_KEY")
-if not openai_api_key:
-    print("경고: OpenAI API 키가 설정되지 않았습니다!")
-openai.api_key = openai_api_key
+# Anthropic 클라이언트 초기화
+anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+if not anthropic_api_key:
+    raise ValueError("Anthropic API 키가 설정되지 않았습니다. .env 파일을 확인해주세요.")
 
-def split_text(text, max_chunk_size=4000):
+client = anthropic.Anthropic(api_key=anthropic_api_key)
+
+# API 키 유효성 검증
+try:
+    print("API 키 유효성 검증 시작...")
+    print(f"API 키: {anthropic_api_key[:5]}...")  # API 키의 처음 5자만 출력
+    
+    # 간단한 API 호출로 키 유효성 검증
+    response = client.messages.create(
+        model="claude-3-5-haiku-20241022",
+        max_tokens=1,
+        messages=[{"role": "user", "content": "test"}]
+    )
+    print("API 키 유효성 검증 성공")
+except anthropic.NotFoundError as e:
+    print(f"모델 버전 오류: {str(e)}")
+    print("사용 가능한 모델 목록:")
+    print("- claude-3-5-haiku-20241022")
+    raise ValueError("지원되지 않는 모델 버전입니다. 모델 버전을 확인해주세요.")
+except anthropic.AuthenticationError as e:
+    print(f"인증 오류: {str(e)}")
+    raise ValueError("API 키가 유효하지 않습니다. API 키를 확인해주세요.")
+except Exception as e:
+    print(f"API 키 유효성 검증 실패: {str(e)}")
+    print(f"에러 타입: {type(e).__name__}")
+    print(f"에러 상세: {str(e)}")
+    raise ValueError(f"API 키 유효성 검증 실패: {str(e)}")
+
+def split_text(text, max_chunk_size=8000):
     """텍스트를 더 큰 청크로 나눕니다."""
-    words = text.split()
+    # 문장 단위로 분할
+    sentences = re.split(r'(?<=[.!?])\s+', text)
     chunks = []
     current_chunk = []
     current_size = 0
     
-    for word in words:
-        current_size += len(word) + 1
-        if current_size > max_chunk_size:
-            chunks.append(' '.join(current_chunk))
-            current_chunk = [word]
-            current_size = len(word)
+    for sentence in sentences:
+        sentence_size = len(sentence)
+        if current_size + sentence_size > max_chunk_size:
+            if current_chunk:
+                chunks.append(' '.join(current_chunk))
+            current_chunk = [sentence]
+            current_size = sentence_size
         else:
-            current_chunk.append(word)
+            current_chunk.append(sentence)
+            current_size += sentence_size
     
     if current_chunk:
         chunks.append(' '.join(current_chunk))
@@ -43,51 +73,39 @@ def split_text(text, max_chunk_size=4000):
     return chunks
 
 def analyze_text_chunk(chunk):
-    """텍스트 청크를 분석하고 재시도 로직을 포함합니다."""
-    max_retries = 3
-    base_delay = 10  # 대기 시간 감소
-    
-    system_prompt = """당신은 교육 내용 분석 전문가입니다.
-    강의 내용을 분석할 때 반드시 아래 세 가지 섹션으로만 구분하여 분석해야 합니다.
-    각 섹션에는 최소 1개 이상의 내용이 포함되어야 합니다.
-    다른 섹션을 추가하거나 다른 형식으로 응답하지 마세요.
-    
-    응답 형식:
-    1. 강의 내용 요약
-    • 첫 번째 내용
-    • 두 번째 내용
-    • 세 번째 내용
+    try:
+        system_prompt = """다음 강의 내용을 분석하여 아래 형식으로 정리해주세요:
 
-    2. 강의에서 어려웠던 점
-    • 첫 번째 어려움
-    • 두 번째 어려움
+1. 강의 내용 요약
+- 핵심 주제와 개념을 간단히 정리
+- 중요한 설명이나 예시 포함
 
-    3. 강사의 발언 중 위험한 표현
-    • 첫 번째 위험 표현
-    • 두 번째 위험 표현
+2. 강의에서 어려웠던 점
+- 설명이 불충분하거나 복잡한 내용
+- 이해하기 어려운 개념이나 용어
 
-    """
-    
-    for attempt in range(max_retries):
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"다음 강의 내용을 위 형식에 맞춰 분석해주세요:\n\n{chunk}"}
-                ],
-                temperature=0.3
-            )
-            return response.choices[0].message['content'].strip()
-        except Exception as e:
-            if "Rate limit" in str(e):
-                wait_time = base_delay * (attempt + 1)
-                print(f"Rate limit에 도달했습니다. {wait_time}초 대기 후 재시도합니다.")
-                time.sleep(wait_time)
-            else:
-                raise
-    
-    raise Exception("최대 재시도 횟수를 초과했습니다.")
+3. 강사의 발언 중 위험한 표현
+- 부적절하거나 오해의 소지가 있는 표현
+- 수정이 필요한 설명이나 예시
+
+각 섹션은 bullet point(•)로 작성하고, 중요한 내용만 간단히 정리해주세요."""
+
+        response = client.messages.create(
+            model="claude-3-5-haiku-20241022",
+            max_tokens=4096,
+            temperature=0.7,
+            messages=[
+                {"role": "user", "content": f"{system_prompt}\n\n강의 내용:\n{chunk}"}
+            ]
+        )
+        if response and response.content and len(response.content) > 0:
+            return response.content[0].text
+        return "분석 결과를 가져올 수 없습니다."
+    except Exception as e:
+        print(f"텍스트 분석 중 오류 발생: {str(e)}")
+        if "not_found_error" in str(e):
+            print("API 모델 버전이 올바르지 않습니다. Anthropic API 문서를 확인해주세요.")
+        return "분석 중 오류가 발생했습니다."
 
 def combine_analyses(analyses):
     """청크별 분석 결과를 통합합니다."""
@@ -195,22 +213,54 @@ def extract_curriculum_topics(curriculum_content):
             ]
         }
         
-        print("GPT에 키워드 추출 요청")
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": json.dumps(subjects_json, ensure_ascii=False)}
-            ],
-            temperature=0.3
-        )
-        
-        topics = json.loads(response.choices[0].message['content'].strip())
-        print("추출된 키워드:")
-        print(json.dumps(topics, ensure_ascii=False, indent=2))
-        
-        topics['subjects_details'] = subjects
-        return topics
+        print("Claude에 키워드 추출 요청")
+        try:
+            response = client.messages.create(
+                model="claude-3-5-haiku-20241022",
+                max_tokens=4096,
+                temperature=0.7,
+                messages=[
+                    {"role": "user", "content": f"{system_prompt}\n\n{json.dumps(subjects_json, ensure_ascii=False)}"}
+                ]
+            )
+            
+            if not response or not response.content:
+                raise ValueError("API 응답이 비어있습니다.")
+            
+            response_text = response.content[0].text.strip()
+            if not response_text:
+                raise ValueError("API 응답 텍스트가 비어있습니다.")
+            
+            topics = json.loads(response_text)
+            print("추출된 키워드:")
+            print(json.dumps(topics, ensure_ascii=False, indent=2))
+            
+            if not isinstance(topics, dict) or 'subject_keywords' not in topics:
+                raise ValueError("API 응답이 올바른 형식이 아닙니다.")
+            
+            topics['subjects_details'] = subjects
+            return topics
+            
+        except anthropic.NotFoundError as e:
+            print(f"Claude API 모델 오류: {str(e)}")
+            # 기본 키워드 생성
+            default_topics = {
+                "subject_keywords": {
+                    subject_name: ["기본 키워드"] for subject_name in subjects.keys()
+                },
+                "subjects_details": subjects
+            }
+            return default_topics
+            
+        except json.JSONDecodeError as e:
+            print(f"JSON 파싱 오류: {str(e)}")
+            raise ValueError("API 응답을 JSON으로 파싱할 수 없습니다.")
+            
+        except Exception as e:
+            print(f"키워드 추출 중 오류 발생: {str(e)}")
+            print(traceback.format_exc())
+            raise ValueError("키워드 추출에 실패했습니다.")
+            
     except Exception as e:
         print(f"주제 추출 중 오류 발생: {str(e)}")
         print(traceback.format_exc())
@@ -240,83 +290,175 @@ def analyze_curriculum_match(vtt_content, topics):
         if matches:
             subject_matches[subject] = len(matches)
     
-    # 세부내용 매칭
+    # 세부내용 매칭 - 한 번의 API 호출로 처리
     if 'subjects_details' in topics:
+        all_details = []
+        all_subjects = []
+        current_idx = 0
+        
         for subject, details in topics['subjects_details'].items():
             detail_items = [item.strip() for item in details.split('\n') if item.strip()]
-            matches = []
-            detail_texts = []
+            all_details.extend(detail_items)
+            all_subjects.extend([subject] * len(detail_items))
+        
+        if all_details:
+            system_prompt = f"""
+            다음 강의 내용이 각 학습 세부내용을 달성했는지 판단해주세요.
+            각 항목에 대해 true 또는 false로만 답변하세요.
+            결과는 JSON 형식으로 반환해주세요.
+
+            [강의 내용]
+            {vtt_content}
+
+            [학습 세부내용]
+            {json.dumps(all_details, ensure_ascii=False)}
+
+            응답 형식:
+            {{
+                "results": [true/false, ...]
+            }}
+            """
             
-            for item in detail_items:
-                system_prompt = f"""
-                다음 강의 내용이 주어진 학습 세부내용을 달성했는지 판단해주세요.
-
-                [학습 세부내용]
-                {item}
-
-                [강의 내용]
-                {vtt_content}
-
-                true 또는 false로만 답변하세요.
-                다른 설명은 하지 마세요.
-                """
+            try:
+                response = client.messages.create(
+                    model="claude-3-5-haiku-20241022",
+                    max_tokens=4096,
+                    temperature=0.7,
+                    messages=[
+                        {"role": "user", "content": system_prompt}
+                    ]
+                )
                 
-                try:
-                    response = openai.ChatCompletion.create(
-                        model="gpt-3.5-turbo",
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": "위 내용을 바탕으로 답변해주세요."}
-                        ],
-                        temperature=0.1
-                    )
-                    
-                    result = response.choices[0].message['content'].strip().lower()
-                    matches.append(result == 'true')
-                    detail_texts.append(item)
-                    
-                except Exception as e:
-                    print(f"세부내용 분석 중 오류 발생: {str(e)}")
-                    matches.append(False)
-                    detail_texts.append(item)
-            
-            if matches:
-                details_matches[subject] = {
-                    'matches': matches,
-                    'total': len(detail_items),
-                    'achieved': sum(matches),
-                    'detail_texts': detail_texts
-                }
+                if response and response.content:
+                    try:
+                        response_text = response.content[0].text.strip()
+                        if not response_text:
+                            raise ValueError("API 응답이 비어있습니다.")
+                        
+                        # JSON 부분만 추출
+                        json_match = re.search(r'\{[\s\S]*\}', response_text)
+                        if not json_match:
+                            raise ValueError("API 응답에서 JSON을 찾을 수 없습니다.")
+                        
+                        json_str = json_match.group(0)
+                        # 주석 제거
+                        json_str = re.sub(r'//.*?\n', '', json_str)
+                        json_str = re.sub(r'/\*.*?\*/', '', json_str, flags=re.DOTALL)
+                        
+                        results = json.loads(json_str)
+                        if not isinstance(results, dict) or 'results' not in results:
+                            raise ValueError("API 응답이 올바른 형식이 아닙니다.")
+                        
+                        matches_list = results.get('results', [])
+                        
+                        # 결과를 과목별로 정리
+                        for subject in set(all_subjects):
+                            subject_detail_count = all_subjects.count(subject)
+                            subject_matches = matches_list[current_idx:current_idx + subject_detail_count]
+                            subject_details = all_details[current_idx:current_idx + subject_detail_count]
+                            
+                            details_matches[subject] = {
+                                'matches': subject_matches,
+                                'total': len(subject_matches),
+                                'achieved': sum(1 for m in subject_matches if m),
+                                'detail_texts': subject_details
+                            }
+                            current_idx += subject_detail_count
+                            
+                    except json.JSONDecodeError as e:
+                        print(f"JSON 파싱 오류: {str(e)}")
+                        print(f"API 응답: {response_text}")
+                        # JSON 파싱 실패 시 기본값 설정
+                        current_idx = 0
+                        for subject in set(all_subjects):
+                            subject_detail_count = all_subjects.count(subject)
+                            details_matches[subject] = {
+                                'matches': [False] * subject_detail_count,
+                                'total': subject_detail_count,
+                                'achieved': 0,
+                                'detail_texts': all_details[current_idx:current_idx + subject_detail_count]
+                            }
+                            current_idx += subject_detail_count
+                            
+            except Exception as e:
+                print(f"세부내용 분석 중 오류 발생: {str(e)}")
+                # 오류 발생 시 기본값 설정
+                current_idx = 0
+                for subject in set(all_subjects):
+                    subject_detail_count = all_subjects.count(subject)
+                    details_matches[subject] = {
+                        'matches': [False] * subject_detail_count,
+                        'total': subject_detail_count,
+                        'achieved': 0,
+                        'detail_texts': all_details[current_idx:current_idx + subject_detail_count]
+                    }
+                    current_idx += subject_detail_count
     
-    return subject_matches, details_matches
+    # 종합 결과 생성
+    summary_prompt = f"""
+    다음 강의 내용과 커리큘럼 매칭 결과를 바탕으로, 강의의 주요 초점과 커버리지를 2-3문장으로 요약해주세요.
+    강의가 어떤 주제에 집중되어 있고, 어떤 부분이 잘 다루어졌는지 설명해주세요.
+
+    [강의 내용]
+    {vtt_content}
+
+    [매칭 결과]
+    {json.dumps(details_matches, ensure_ascii=False)}
+    """
+    
+    try:
+        summary_response = client.messages.create(
+            model="claude-3-5-haiku-20241022",
+            max_tokens=1000,
+            temperature=0.7,
+            messages=[
+                {"role": "user", "content": summary_prompt}
+            ]
+        )
+        
+        if summary_response and summary_response.content:
+            summary = summary_response.content[0].text.strip()
+        else:
+            summary = "강의 내용 분석 결과를 생성할 수 없습니다."
+    except Exception as e:
+        print(f"종합 결과 생성 중 오류 발생: {str(e)}")
+        summary = "강의 내용 분석 결과를 생성할 수 없습니다."
+    
+    return subject_matches, details_matches, summary
 
 def analyze_vtt(vtt_content):
     try:
+        print("VTT 파일 처리 시작...")
         captions = []
         vtt_file = StringIO(vtt_content)
+        
+        # VTT 파일 파싱 및 텍스트 추출
         for caption in webvtt.read_buffer(vtt_file):
-            captions.append(caption.text)
+            if caption.text.strip():  # 빈 자막 제외
+                captions.append(caption.text)
         
         full_text = " ".join(captions)
-        
         if not full_text.strip():
             raise ValueError("VTT 파일에서 텍스트를 추출할 수 없습니다.")
         
-        chunks = split_text(full_text)
-        print(f"총 {len(chunks)}개의 청크로 나누어졌습니다.")
+        # 텍스트를 더 큰 청크로 분할 (8000자 기준)
+        chunks = split_text(full_text, max_chunk_size=8000)
+        print(f"텍스트를 {len(chunks)}개의 청크로 분할했습니다.")
         
         analyses = []
         for i, chunk in enumerate(chunks, 1):
-            print(f"VTT 청크 {i}/{len(chunks)} 분석 중...")
+            print(f"청크 {i}/{len(chunks)} 분석 중...")
             analysis = analyze_text_chunk(chunk)
             if analysis:
                 analyses.append(analysis)
+            # API 호출 간격 조정 (3초)
             if i < len(chunks):
-                time.sleep(10)
+                time.sleep(3)
         
         if not analyses:
             raise ValueError("텍스트 분석에 실패했습니다.")
         
+        print("분석 결과 통합 중...")
         combined_analysis = combine_analyses(analyses)
         return combined_analysis
         
@@ -336,7 +478,7 @@ def analyze_curriculum(curriculum_content, vtt_content):
             raise ValueError("커리큘럼 분석에 실패했습니다.")
         
         # 교과목 매칭 분석
-        subject_matches, details_matches = analyze_curriculum_match(vtt_content, topics)
+        subject_matches, details_matches, summary = analyze_curriculum_match(vtt_content, topics)
         
         # 매칭된 교과목과 달성도 계산
         matched_subjects = []
@@ -354,7 +496,8 @@ def analyze_curriculum(curriculum_content, vtt_content):
         result = {
             "matched_subjects": matched_subjects,
             "subject_matches": subject_matches,
-            "details_matches": details_matches
+            "details_matches": details_matches,
+            "summary": summary
         }
         
         return result
@@ -435,68 +578,50 @@ def send_complete(data):
     }) + "\n"
 
 def analyze_chat_log(chat_content):
-    """채팅 기록을 분석하여 위험 요소를 탐지합니다."""
     try:
         system_prompt = """당신은 교육 환경에서의 채팅 기록을 전문적으로 분석하는 전문가입니다.
-        채팅 내용을 깊이 있게 분석하여 전문적인 보고서 형식으로 작성해주세요.
+        제공된 채팅 기록을 심층적으로 분석하여 아래 형식에 맞춰 보고서를 작성해주세요.
 
-        분석 보고서 형식:
+        # 디스코드 채팅 기록 분석 리포트
 
-        [채팅 분석 보고서]
+        ## 개요
+        - 채팅 기록의 전반적인 맥락과 주요 참여자 파악
+        - 주요 논의 주제와 빈도 분석
 
-        1. 위험 발언 분석
-        1.1. 주요 위험 발언 요약
-        • 발견된 위험 발언의 핵심 내용과 심각도를 간단히 요약
-        
-        1.2. 상세 위험 발언 목록
-        • 구체적인 위험 발언 내용 (발언 시점과 함께)
-        • 각 발언의 위험 수준 평가 (상/중/하)
-        • 잠재적 영향 분석
+        ## 수강생 불만/어려움 분석
 
-        2. 수업 관련 피드백
-        2.1. 부정적 피드백
-        • 수업 내용/방식에 대한 주요 불만 사항
-        • 불만의 성격 분류 (수업 내용/강의 방식/기술적 문제 등)
-        
-        2.2. 긍정적 피드백
-        • 수업에 대한 긍정적 반응
-        • 학습 효과 관련 긍정적 코멘트
+        ## 잠재적 위험 요소 및 문제점
 
-        3. 상호작용 분석
-        3.1. 학습 참여도
-        • 학생들의 수업 참여 정도
-        • 질문과 답변의 빈도
-        
-        3.2. 커뮤니케이션 패턴
-        • 학생-교수자 간 소통 방식
-        • 학생들 간의 상호작용
+        ## 개선 제안
 
-        4. 개선 제안
-        • 발견된 문제점들에 대한 구체적 개선 방안
-        • 향후 수업 운영을 위한 제언
+        ## 결론
+        - 주요 발견사항 요약
+        - 핵심 문제점 정리
+        - 우선순위 개선과제 제시
 
         분석 시 주의사항:
-        1. 메타데이터(발언자 ID, 타임스탬프 등)는 제외하고 실제 내용만 포함
-        2. 각 발언의 맥락을 고려하여 분석
-        3. 객관적이고 전문적인 용어 사용
-        4. 심각한 위험 요소는 별도로 강조
+        1. 객관적이고 데이터 기반의 분석 수행
+        2. 문제의 원인과 영향을 구체적으로 파악
+        3. 실행 가능한 개선방안 제시
+        4. 시급성과 중요도를 고려한 우선순위 설정
+        5. 보안 및 개인정보 보호 관점 고려
         """
         
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        response = client.messages.create(
+            model="claude-3-5-haiku-20241022",
+            max_tokens=4096,
+            temperature=0.7,
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"다음 채팅 기록을 분석해주세요:\n\n{chat_content}"}
-            ],
-            temperature=0.3
+                {"role": "user", "content": f"{system_prompt}\n\n다음 채팅 기록을 분석해주세요:\n\n{chat_content}"}
+            ]
         )
         
-        return response.choices[0].message['content'].strip()
-        
+        if response and response.content and len(response.content) > 0:
+            return response.content[0].text
+        return "채팅 분석 결과를 가져올 수 없습니다."
     except Exception as e:
         print(f"채팅 분석 중 오류 발생: {str(e)}")
-        print(traceback.format_exc())
-        raise
+        return "채팅 분석 중 오류가 발생했습니다."
 
 @app.route('/')
 def index():
@@ -564,34 +689,57 @@ def analyze():
 def analyze_chat():
     try:
         if 'chat_file' not in request.files:
-            return jsonify({'error': '채팅 파일이 누락되었습니다.'}), 400
+            return jsonify({
+                'error': '채팅 파일이 누락되었습니다.',
+                'details': '채팅 파일을 선택해주세요.'
+            }), 400
         
         chat_file = request.files['chat_file']
-        
         if chat_file.filename == '':
-            return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
+            return jsonify({
+                'error': '파일이 선택되지 않았습니다.',
+                'details': '채팅 파일을 선택해주세요.'
+            }), 400
             
         try:
             chat_content = chat_file.read().decode('utf-8')
         except UnicodeDecodeError:
-            return jsonify({'error': '파일 인코딩이 올바르지 않습니다. UTF-8 형식의 파일을 업로드해주세요.'}), 400
+            return jsonify({
+                'error': '파일 인코딩이 올바르지 않습니다.',
+                'details': 'UTF-8 형식의 파일을 업로드해주세요.'
+            }), 400
         
-        print("채팅 기록 분석 시작...")
-        chat_analysis = analyze_chat_log(chat_content)
-        print("채팅 기록 분석 완료")
+        print("채팅 기록 분석 시작")
+        analysis = analyze_chat_log(chat_content)
+        
+        if not analysis:
+            return jsonify({
+                'error': '채팅 분석 중 오류가 발생했습니다.',
+                'details': '분석 결과를 가져올 수 없습니다.'
+            }), 500
         
         return jsonify({
-            'progress': '채팅 분석이 완료되었습니다!',
-            'chat_analysis': chat_analysis
+            'success': True,
+            'analysis': analysis,
+            'chat_content': chat_content
         })
-        
     except Exception as e:
         print(f"채팅 분석 중 오류 발생: {str(e)}")
-        print(traceback.format_exc())
         return jsonify({
-            'error': f'서버 오류가 발생했습니다: {str(e)}',
-            'progress': '분석 중 오류가 발생했습니다.'
+            'error': '채팅 분석 중 오류가 발생했습니다.',
+            'details': str(e)
         }), 500
 
+@app.errorhandler(500)
+def internal_error(error):
+    error_message = str(error)
+    if "credit balance is too low" in error_message:
+        return render_template('error.html', 
+                             error="API 크레딧이 부족합니다. Anthropic 계정에서 크레딧을 충전해주세요.",
+                             details="Anthropic API 사용을 위해 계정의 크레딧을 확인하고 충전해주세요.")
+    return render_template('error.html', 
+                         error="서버 오류가 발생했습니다.",
+                         details=error_message)
+
 if __name__ == '__main__':
-    app.run(debug=True) 
+    app.run(debug=True, port=5005) 

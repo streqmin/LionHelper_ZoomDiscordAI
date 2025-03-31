@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>오류 발생</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="error-container">
+            <h1>오류가 발생했습니다</h1>
+            <div class="error-message">
+                <p>{{ error }}</p>
+                {% if details %}
+                <p class="error-details">{{ details }}</p>
+                {% endif %}
+            </div>
+            <div class="button-container">
+                <a href="/" class="btn btn-primary">홈으로 돌아가기</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html> 
