@@ -20,7 +20,11 @@ anthropic_api_key = os.getenv('ANTHROPIC_API_KEY')
 if not anthropic_api_key:
     raise ValueError("ANTHROPIC_API_KEY environment variable is not set")
 
-client = anthropic.Client(api_key=anthropic_api_key)
+# Anthropic 클라이언트 초기화 시 헤더 추가
+client = anthropic.Client(
+    api_key=anthropic_api_key,
+    headers={"anthropic-version": "2023-06-01"}
+)
 
 # API 키 유효성 검증
 try:
