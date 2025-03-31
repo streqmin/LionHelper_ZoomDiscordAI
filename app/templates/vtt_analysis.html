@@ -371,7 +371,7 @@
                 progressMessage.textContent = "VTT 파일을 읽는 중...";
                 
                 try {
-                    const response = await fetch('/analyze', {
+                    const response = await fetch('/analyze_vtt', {
                         method: 'POST',
                         body: formData
                     });
