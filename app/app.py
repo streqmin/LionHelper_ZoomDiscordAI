@@ -16,11 +16,11 @@ load_dotenv()
 app = Flask(__name__)
 
 # Anthropic 클라이언트 초기화
-anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+anthropic_api_key = os.getenv('ANTHROPIC_API_KEY')
 if not anthropic_api_key:
-    raise ValueError("Anthropic API 키가 설정되지 않았습니다. .env 파일을 확인해주세요.")
+    raise ValueError("ANTHROPIC_API_KEY environment variable is not set")
 
-client = anthropic.Anthropic(api_key=anthropic_api_key)
+client = anthropic.Client(api_key=anthropic_api_key)
 
 # API 키 유효성 검증
 try:
