@@ -1,17 +1,17 @@
-from flask import Flask, render_template, request, jsonify, Response
-import anthropic
-import webvtt
 import os
-import traceback
-import time
 import json
 import pandas as pd
-from dotenv import load_dotenv
-from io import StringIO, BytesIO
-from datetime import datetime
-import re
+from flask import Flask, render_template, request, jsonify
+import webvtt
 import requests
+from datetime import datetime
+from dotenv import load_dotenv
+import traceback
+import time
+import re
+from io import StringIO, BytesIO
 
+# 환경 변수 로드
 load_dotenv()
 
 app = Flask(__name__)
