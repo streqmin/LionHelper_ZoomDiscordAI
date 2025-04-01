@@ -1,11 +1,19 @@
 from celery import Celery
 from app import app
-from app import client
 import json
 import webvtt
 from io import StringIO
 import pandas as pd
 import traceback
+import os
+from dotenv import load_dotenv
+from anthropic import Anthropic
+
+# 환경 변수 로드
+load_dotenv()
+
+# Anthropic 클라이언트 초기화
+client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
 # Celery 인스턴스 생성
 celery = Celery('tasks')

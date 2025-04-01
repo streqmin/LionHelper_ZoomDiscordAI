@@ -12,7 +12,7 @@ import time
 import re
 from io import StringIO, BytesIO
 import sys
-from app.tasks import analyze_vtt_task
+from app.tasks import analyze_vtt_task, client
 from anthropic import Anthropic
 
 # 환경 변수 로드
