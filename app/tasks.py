@@ -13,7 +13,10 @@ from anthropic import Anthropic
 load_dotenv()
 
 # Anthropic 클라이언트 초기화
-client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+client = Anthropic(
+    api_key=os.getenv('ANTHROPIC_API_KEY'),
+    http_client=None
+)
 
 # Celery 인스턴스 생성
 celery = Celery('tasks')
@@ -164,17 +167,19 @@ def analyze_curriculum_match(vtt_content, topics):
         """
         
         try:
-            summary_response = client.create_completion(
+            summary_response = client.messages.create(
                 model="claude-3-haiku-20240307",
                 max_tokens=1000,
                 temperature=0.7,
-                prompt=f"\n\nHuman: {summary_prompt}\n\nAssistant:"
+                messages=[
+                    {"role": "user", "content": summary_prompt}
+                ]
             )
             
             if summary_response is None:
                 summary = "강의 내용 분석 결과를 생성할 수 없습니다."
             else:
-                summary = summary_response.strip()
+                summary = summary_response.content[0].text
         except Exception as e:
             print(f"종합 결과 생성 중 오류 발생: {str(e)}")
             summary = "강의 내용 분석 결과를 생성할 수 없습니다."
