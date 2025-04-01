@@ -207,7 +207,55 @@ def combine_analyses(analyses):
     
     return result
 
+def analyze_vtt_content(vtt_content):
+    """VTT 파일 내용을 분석하여 텍스트를 추출합니다."""
+    try:
+        print("강의 내용 분석 시작...")
+        vtt = webvtt.read_buffer(StringIO(vtt_content))
+        text_content = []
+        for caption in vtt:
+            text_content.append(caption.text)
+        return "\n".join(text_content)
+    except Exception as e:
+        print(f"예상치 못한 오류 발생: {str(e)}")
+        return vtt_content
+
+def process_curriculum_file(curriculum_file):
+    """커리큘럼 파일을 처리하여 JSON 형식으로 변환합니다."""
+    try:
+        if curriculum_file.filename.endswith('.json'):
+            curriculum_content = curriculum_file.read().decode('utf-8')
+            return curriculum_content
+        else:
+            df = pd.read_excel(curriculum_file)
+            print("엑셀 파일 읽기 성공")
+            print(f"컬럼: {df.columns.tolist()}")
+            print(f"데이터 행 수: {len(df)}")
+            
+            curriculum_data = {
+                "units": []
+            }
+            
+            for _, row in df.iterrows():
+                subject_name = row['교과목명']
+                details = row['세부내용']
+                print(f"처리된 교과목: {subject_name}")
+                
+                curriculum_data["units"].append({
+                    "subject_name": subject_name,
+                    "details": details
+                })
+            
+            print("JSON 변환 결과:")
+            print(json.dumps(curriculum_data, ensure_ascii=False, indent=2))
+            return json.dumps(curriculum_data, ensure_ascii=False)
+            
+    except Exception as e:
+        print(f"커리큘럼 파일 처리 중 오류 발생: {str(e)}")
+        raise ValueError("커리큘럼 파일 처리에 실패했습니다.")
+
 def extract_curriculum_topics(curriculum_content):
+    """커리큘럼에서 주제와 키워드를 추출합니다."""
     try:
         print("커리큘럼 내용 분석 시작")
         curriculum_data = json.loads(curriculum_content)
@@ -300,217 +348,46 @@ def extract_curriculum_topics(curriculum_content):
         return None
 
 def analyze_curriculum_match(vtt_content, topics):
-    if not topics or 'subject_keywords' not in topics:
-        return {}, {}
-    
-    print("\n=== 커리큘럼 매칭 분석 시작 ===")
-    
-    subject_matches = {}
-    details_matches = {}
-    
-    # VTT 내용 전처리
-    print("\nVTT 내용 전처리 시작...")
-    vtt_content = vtt_content.replace('\n', ' ').strip()
-    sentences = re.split(r'(?<=[.!?요다죠음])\s+', vtt_content)
-    
-    # 키워드 기반 매칭
-    for subject, keywords in topics['subject_keywords'].items():
-        matches = []
-        for keyword in keywords:
-            for sentence in sentences:
-                if keyword in sentence:
-                    matches.append(sentence)
-        if matches:
-            subject_matches[subject] = len(matches)
-    
-    # 세부내용 매칭 - 한 번의 API 호출로 처리
-    if 'subjects_details' in topics:
-        all_details = []
-        all_subjects = []
-        current_idx = 0
-        
-        for subject, details in topics['subjects_details'].items():
-            detail_items = [item.strip() for item in details.split('\n') if item.strip()]
-            all_details.extend(detail_items)
-            all_subjects.extend([subject] * len(detail_items))
-        
-        if all_details:
-            system_prompt = f"""
-            다음 강의 내용이 각 학습 세부내용을 달성했는지 판단해주세요.
-            각 항목에 대해 true 또는 false로만 답변하세요.
-            결과는 JSON 형식으로 반환해주세요.
-
-            [강의 내용]
-            {vtt_content}
-
-            [학습 세부내용]
-            {json.dumps(all_details, ensure_ascii=False)}
-
-            응답 형식:
-            {{
-                "results": [true/false, ...]
-            }}
-            """
-            
-            try:
-                response = client.create_completion(
-                    model="claude-3-haiku-20240307",
-                    max_tokens=4096,
-                    temperature=0.7,
-                    prompt=f"\n\nHuman: {system_prompt}\n\nAssistant:"
-                )
-                
-                if response is None:
-                    raise ValueError("API 응답이 비어있습니다.")
-                
-                response_text = response.strip()
-                if not response_text:
-                    raise ValueError("API 응답이 비어있습니다.")
-                
-                # JSON 부분만 추출
-                json_match = re.search(r'\{[\s\S]*\}', response_text)
-                if not json_match:
-                    raise ValueError("API 응답에서 JSON을 찾을 수 없습니다.")
-                
-                json_str = json_match.group(0)
-                # 주석 제거
-                json_str = re.sub(r'//.*?\n', '', json_str)
-                json_str = re.sub(r'/\*.*?\*/', '', json_str, flags=re.DOTALL)
-                
-                results = json.loads(json_str)
-                if not isinstance(results, dict) or 'results' not in results:
-                    raise ValueError("API 응답이 올바른 형식이 아닙니다.")
-                
-                matches_list = results.get('results', [])
-                
-                # 결과를 과목별로 정리
-                for subject in set(all_subjects):
-                    subject_detail_count = all_subjects.count(subject)
-                    subject_matches = matches_list[current_idx:current_idx + subject_detail_count]
-                    subject_details = all_details[current_idx:current_idx + subject_detail_count]
-                    
-                    details_matches[subject] = {
-                        'matches': subject_matches,
-                        'total': len(subject_matches),
-                        'achieved': sum(1 for m in subject_matches if m),
-                        'detail_texts': subject_details
-                    }
-                    current_idx += subject_detail_count
-                    
-            except json.JSONDecodeError as e:
-                print(f"JSON 파싱 오류: {str(e)}")
-                print(f"API 응답: {response_text}")
-                # JSON 파싱 실패 시 기본값 설정
-                current_idx = 0
-                for subject in set(all_subjects):
-                    subject_detail_count = all_subjects.count(subject)
-                    details_matches[subject] = {
-                        'matches': [False] * subject_detail_count,
-                        'total': subject_detail_count,
-                        'achieved': 0,
-                        'detail_texts': all_details[current_idx:current_idx + subject_detail_count]
-                    }
-                    current_idx += subject_detail_count
-            
-    # 종합 결과 생성
-    summary_prompt = f"""
-    다음 강의 내용과 커리큘럼 매칭 결과를 바탕으로, 강의의 주요 초점과 커버리지를 2-3문장으로 요약해주세요.
-    강의가 어떤 주제에 집중되어 있고, 어떤 부분이 잘 다루어졌는지 설명해주세요.
-
-    [강의 내용]
-    {vtt_content}
-
-    [매칭 결과]
-    {json.dumps(details_matches, ensure_ascii=False)}
-    """
-    
+    """VTT 내용과 커리큘럼을 매칭하여 분석합니다."""
     try:
-        summary_response = client.create_completion(
-            model="claude-3-haiku-20240307",
-            max_tokens=1000,
-            temperature=0.7,
-            prompt=f"\n\nHuman: {summary_prompt}\n\nAssistant:"
+        if not topics or 'subject_keywords' not in topics:
+            raise ValueError("주제 정보가 없습니다.")
+            
+        subject_keywords = topics['subject_keywords']
+        subjects_details = topics.get('subjects_details', {})
+        
+        # 각 교과목별 매칭 분석
+        subject_matches = {}
+        for subject_name, keywords in subject_keywords.items():
+            matches = []
+            for keyword in keywords:
+                if keyword.lower() in vtt_content.lower():
+                    matches.append(keyword)
+            
+            if matches:
+                subject_matches[subject_name] = {
+                    'keywords': matches,
+                    'details': subjects_details.get(subject_name, ''),
+                    'match_count': len(matches)
+                }
+        
+        # 매칭 결과 정렬
+        sorted_matches = sorted(
+            subject_matches.items(),
+            key=lambda x: x[1]['match_count'],
+            reverse=True
         )
         
-        if summary_response is None:
-            summary = "강의 내용 분석 결과를 생성할 수 없습니다."
-        else:
-            summary = summary_response.strip()
-    except Exception as e:
-        print(f"종합 결과 생성 중 오류 발생: {str(e)}")
-        summary = "강의 내용 분석 결과를 생성할 수 없습니다."
-    
-    return subject_matches, details_matches, summary
-
-def analyze_vtt_content(vtt_content):
-    try:
-        # VTT 내용을 임시 파일로 저장
-        temp_vtt = StringIO(vtt_content)
-        
-        # VTT 파일 파싱
-        vtt_text = ""
-        try:
-            for caption in webvtt.read_buffer(temp_vtt):
-                vtt_text += caption.text + " "
-        except Exception as e:
-            print(f"VTT 파싱 중 오류 발생: {str(e)}")
-            # 대체 방법으로 직접 파싱
-            for line in vtt_content.split('\n'):
-                if line.strip() and not line.strip().isdigit() and '-->' not in line:
-                    vtt_text += line.strip() + " "
-        
-        if not vtt_text.strip():
-            return "VTT 파일에서 텍스트를 추출할 수 없습니다."
-        
-        # 강의 내용 분석
-        print("강의 내용 분석 시작...")
-        chunks = split_text(vtt_text)
-        analysis_results = []
-        
-        for chunk in chunks:
-            result = analyze_text_chunk(chunk)
-            if result:
-                analysis_results.append(result)
-        
-        if not analysis_results:
-            return "분석할 내용이 없습니다."
-        
-        # 분석 결과 종합
-        system_prompt = """다음은 강의 내용을 분석한 결과입니다. 이를 종합하여 다음 형식으로 정리해주세요:
-
-1. 강의 내용 요약
-- 전체 강의의 핵심 주제와 개념을 간단히 정리
-- 중요한 설명이나 예시 포함
-
-2. 강의에서 어려웠던 점
-- 설명이 불충분하거나 복잡한 내용
-- 이해하기 어려운 개념이나 용어
-
-3. 강사의 발언 중 위험한 표현
-- 부적절하거나 오해의 소지가 있는 표현
-- 수정이 필요한 설명이나 예시
-
-각 섹션은 bullet point(•)로 작성하고, 중요한 내용만 간단히 정리해주세요."""
-        
-        try:
-            summary_response = client.create_completion(
-                prompt=f"\n\nHuman: {system_prompt}\n\n분석 결과:\n{''.join(analysis_results)}\n\nAssistant:"
-            )
-            
-            if summary_response is None:
-                summary = "강의 내용 분석 결과를 생성할 수 없습니다."
-            else:
-                summary = summary_response.strip()
-        except Exception as e:
-            print(f"종합 결과 생성 중 오류 발생: {str(e)}")
-            summary = "강의 내용 분석 결과를 생성할 수 없습니다."
-        
-        return summary
+        return {
+            'subject_matches': dict(sorted_matches),
+            'total_subjects': len(subject_keywords),
+            'matched_subjects': len(subject_matches)
+        }
         
     except Exception as e:
-        print(f"VTT 분석 중 오류 발생: {str(e)}")
+        print(f"매칭 분석 중 오류 발생: {str(e)}")
         print(traceback.format_exc())
-        return "VTT 분석 중 오류가 발생했습니다."
+        return None
 
 def analyze_curriculum(curriculum_content, vtt_content):
     try:
@@ -679,7 +556,7 @@ def chat_analysis():
 def analyze_vtt():
     try:
         if 'vtt_file' not in request.files or 'curriculum_file' not in request.files:
-            return jsonify({'error': '파일이 누락되었습니다.'}), 400
+            return jsonify({'error': 'VTT 파일과 커리큘럼 파일이 모두 필요합니다.'}), 400
             
         vtt_file = request.files['vtt_file']
         curriculum_file = request.files['curriculum_file']
@@ -687,40 +564,36 @@ def analyze_vtt():
         if vtt_file.filename == '' or curriculum_file.filename == '':
             return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
             
-        if not vtt_file.filename.endswith('.vtt'):
-            return jsonify({'error': 'VTT 파일만 업로드 가능합니다.'}), 400
+        # 1. VTT 파일 분석
+        vtt_content = vtt_file.read().decode('utf-8')
+        analyzed_content = analyze_vtt_content(vtt_content)
+        
+        # 2. 커리큘럼 파일 처리
+        curriculum_content = process_curriculum_file(curriculum_file)
+        
+        # 3. 커리큘럼 주제 추출
+        topics = extract_curriculum_topics(curriculum_content)
+        if not topics:
+            return jsonify({'error': '커리큘럼 분석에 실패했습니다.'}), 500
             
-        try:
-            # VTT 파일 분석
-            vtt_content = vtt_file.stream.read().decode('utf-8')
-            vtt_analysis = analyze_vtt_content(vtt_content)
+        # 4. 매칭 분석
+        match_analysis = analyze_curriculum_match(analyzed_content, topics)
+        if not match_analysis:
+            return jsonify({'error': '매칭 분석에 실패했습니다.'}), 500
             
-            # 커리큘럼 파일 처리
-            curriculum_content = curriculum_file.stream.read()
-            if curriculum_file.filename.endswith(('.xlsx', '.xls')):
-                curriculum_content = excel_to_json(curriculum_content)
-            else:
-                curriculum_content = curriculum_content.decode('utf-8')
-                try:
-                    json.loads(curriculum_content)
-                except json.JSONDecodeError:
-                    return jsonify({'error': '올바른 JSON 형식이 아닙니다.'}), 400
-            
-            # 커리큘럼 분석
-            curriculum_analysis = analyze_curriculum(curriculum_content, vtt_content)
-            
-            return jsonify({
-                'vtt_analysis': vtt_analysis,
-                'curriculum_analysis': curriculum_analysis
-            })
-            
-        except UnicodeDecodeError:
-            return jsonify({'error': '파일 인코딩이 올바르지 않습니다. UTF-8 형식의 파일을 업로드해주세요.'}), 400
-            
+        # 5. 결과 생성
+        result = {
+            'vtt_content': analyzed_content,
+            'curriculum_analysis': topics,
+            'match_analysis': match_analysis
+        }
+        
+        return jsonify(result)
+        
     except Exception as e:
         print(f"분석 중 오류 발생: {str(e)}")
         print(traceback.format_exc())
-        return jsonify({'error': f'서버 오류가 발생했습니다: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/analyze_chat', methods=['POST'])
 def analyze_chat():
