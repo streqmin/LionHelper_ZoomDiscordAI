@@ -13,6 +13,8 @@ services:
         sync: false
       - key: PORT
         value: 10000
+      - key: WEB_CONCURRENCY
+        value: 4
 
   - type: redis
     name: vtt-analysis-redis
