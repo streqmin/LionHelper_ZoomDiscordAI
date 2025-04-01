@@ -508,21 +508,30 @@ def analyze_chat_log(chat_content):
         5. 보안 및 개인정보 보호 관점 고려
         """
         
-        prompt = f"\n\nHuman: {system_prompt}\n\n다음 채팅 기록을 분석해주세요:\n\n{chat_content}\n\nAssistant:"
-        response = client.create_completion(
+        # API 요청 형식 수정
+        response = client.messages.create(
             model="claude-3-haiku-20240307",
             max_tokens=4096,
-            temperature=0.7,
-            prompt=prompt
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": f"다음 채팅 기록을 분석해주세요:\n\n{chat_content}"
+                }
+            ]
         )
         
-        if response is None:
+        if not response or not response.content:
             return "채팅 분석 결과를 가져올 수 없습니다."
             
-        return response
+        return response.content[0].text
         
     except Exception as e:
         print(f"채팅 분석 중 오류 발생: {str(e)}")
+        print(traceback.format_exc())
         return "채팅 분석 중 오류가 발생했습니다."
 
 @app.route('/')
