@@ -10,11 +10,14 @@ import traceback
 import time
 import re
 from io import StringIO, BytesIO
+import sys
 
 # 환경 변수 로드
 load_dotenv()
 
 app = Flask(__name__)
+
+sys.setrecursionlimit(10000)  # 재귀 깊이 제한 증가
 
 class AnthropicAPI:
     def __init__(self, api_key):
@@ -265,7 +268,7 @@ def extract_curriculum_topics(curriculum_content):
             
             if not response or not response.strip():
                 raise ValueError("API 응답이 비어있습니다.")
-            
+                
             response_text = response.strip()
             if not response_text:
                 raise ValueError("API 응답 텍스트가 비어있습니다.")
@@ -290,15 +293,6 @@ def extract_curriculum_topics(curriculum_content):
                 "subjects_details": subjects
             }
             return default_topics
-            
-        except json.JSONDecodeError as e:
-            print(f"JSON 파싱 오류: {str(e)}")
-            raise ValueError("API 응답을 JSON으로 파싱할 수 없습니다.")
-            
-        except Exception as e:
-            print(f"키워드 추출 중 오류 발생: {str(e)}")
-            print(traceback.format_exc())
-            raise ValueError("키워드 추출에 실패했습니다.")
             
     except Exception as e:
         print(f"주제 추출 중 오류 발생: {str(e)}")
