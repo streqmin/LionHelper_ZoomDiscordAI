@@ -600,10 +600,10 @@ def get_task_status(task_id):
 @app.route('/analyze_chat', methods=['POST'])
 def analyze_chat():
     try:
-        if 'file' not in request.files:
+        if 'chat_file' not in request.files:
             return jsonify({'error': '파일이 업로드되지 않았습니다.'}), 400
             
-        file = request.files['file']
+        file = request.files['chat_file']
         if file.filename == '':
             return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
             
