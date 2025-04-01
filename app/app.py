@@ -29,15 +29,36 @@ class AnthropicAPI:
             "content-type": "application/json"
         }
 
-    def create_completion(self, prompt, model="claude-instant-1", max_tokens=4096, temperature=0.7):
+    def create_completion(self, prompt, model="claude-3-haiku-20240307", max_tokens=4096, temperature=0.7):
         try:
+            # 프롬프트에서 Human/Assistant 부분 추출
+            parts = prompt.split("\n\nHuman: ")
+            if len(parts) > 1:
+                system_prompt = parts[0].strip()
+                user_message = parts[1].split("\n\nAssistant:")[0].strip()
+            else:
+                system_prompt = ""
+                user_message = prompt.strip()
+
+            messages = []
+            if system_prompt:
+                messages.append({
+                    "role": "system",
+                    "content": system_prompt
+                })
+            
+            messages.append({
+                "role": "user",
+                "content": user_message
+            })
+
             response = requests.post(
-                f"{self.base_url}/complete",
+                f"{self.base_url}/messages",
                 headers=self.headers,
                 json={
-                    "prompt": prompt,
+                    "messages": messages,
                     "model": model,
-                    "max_tokens_to_sample": max_tokens,
+                    "max_tokens": max_tokens,
                     "temperature": temperature
                 }
             )
@@ -47,11 +68,11 @@ class AnthropicAPI:
             
             # 응답 파싱
             result = response.json()
-            if "completion" not in result:
+            if "content" not in result or len(result["content"]) == 0:
                 print(f"예상치 못한 API 응답 형식: {result}")
                 return None
                 
-            return result["completion"]
+            return result["content"][0]["text"]
             
         except requests.exceptions.RequestException as e:
             print(f"API 요청 중 오류 발생: {str(e)}")
@@ -237,7 +258,7 @@ def extract_curriculum_topics(curriculum_content):
         try:
             response = client.create_completion(
                 model="claude-3-haiku-20240307",
-                max_tokens_to_sample=4096,
+                max_tokens=4096,
                 temperature=0.7,
                 prompt=f"\n\nHuman: {system_prompt}\n\n{json.dumps(subjects_json, ensure_ascii=False)}\n\nAssistant:"
             )
@@ -259,8 +280,8 @@ def extract_curriculum_topics(curriculum_content):
             topics['subjects_details'] = subjects
             return topics
             
-        except anthropic.NotFoundError as e:
-            print(f"Claude API 모델 오류: {str(e)}")
+        except requests.exceptions.RequestException as e:
+            print(f"API 요청 중 오류 발생: {str(e)}")
             # 기본 키워드 생성
             default_topics = {
                 "subject_keywords": {
@@ -340,7 +361,7 @@ def analyze_curriculum_match(vtt_content, topics):
             try:
                 response = client.create_completion(
                     model="claude-3-haiku-20240307",
-                    max_tokens_to_sample=4096,
+                    max_tokens=4096,
                     temperature=0.7,
                     prompt=f"\n\nHuman: {system_prompt}\n\nAssistant:"
                 )
@@ -412,7 +433,7 @@ def analyze_curriculum_match(vtt_content, topics):
     try:
         summary_response = client.create_completion(
             model="claude-3-haiku-20240307",
-            max_tokens_to_sample=1000,
+            max_tokens=1000,
             temperature=0.7,
             prompt=f"\n\nHuman: {summary_prompt}\n\nAssistant:"
         )
@@ -429,15 +450,36 @@ def analyze_curriculum_match(vtt_content, topics):
 
 def analyze_vtt_content(vtt_content):
     try:
+        # VTT 내용을 임시 파일로 저장
+        temp_vtt = StringIO(vtt_content)
+        
+        # VTT 파일 파싱
+        vtt_text = ""
+        try:
+            for caption in webvtt.read_buffer(temp_vtt):
+                vtt_text += caption.text + " "
+        except Exception as e:
+            print(f"VTT 파싱 중 오류 발생: {str(e)}")
+            # 대체 방법으로 직접 파싱
+            for line in vtt_content.split('\n'):
+                if line.strip() and not line.strip().isdigit() and '-->' not in line:
+                    vtt_text += line.strip() + " "
+        
+        if not vtt_text.strip():
+            return "VTT 파일에서 텍스트를 추출할 수 없습니다."
+        
         # 강의 내용 분석
         print("강의 내용 분석 시작...")
-        chunks = split_text(vtt_content)
+        chunks = split_text(vtt_text)
         analysis_results = []
         
         for chunk in chunks:
             result = analyze_text_chunk(chunk)
             if result:
                 analysis_results.append(result)
+        
+        if not analysis_results:
+            return "분석할 내용이 없습니다."
         
         # 분석 결과 종합
         system_prompt = """다음은 강의 내용을 분석한 결과입니다. 이를 종합하여 다음 형식으로 정리해주세요:
@@ -473,6 +515,7 @@ def analyze_vtt_content(vtt_content):
         
     except Exception as e:
         print(f"VTT 분석 중 오류 발생: {str(e)}")
+        print(traceback.format_exc())
         return "VTT 분석 중 오류가 발생했습니다."
 
 def analyze_curriculum(curriculum_content, vtt_content):
@@ -610,7 +653,12 @@ def analyze_chat_log(chat_content):
         """
         
         prompt = f"\n\nHuman: {system_prompt}\n\n다음 채팅 기록을 분석해주세요:\n\n{chat_content}\n\nAssistant:"
-        response = client.create_completion(prompt=prompt)
+        response = client.create_completion(
+            model="claude-3-haiku-20240307",
+            max_tokens=4096,
+            temperature=0.7,
+            prompt=prompt
+        )
         
         if response is None:
             return "채팅 분석 결과를 가져올 수 없습니다."
@@ -636,56 +684,49 @@ def chat_analysis():
 @app.route('/analyze_vtt', methods=['POST'])
 def analyze_vtt():
     try:
-        if 'file' not in request.files:
-            return jsonify({'error': '파일이 업로드되지 않았습니다.'}), 400
+        if 'vtt_file' not in request.files or 'curriculum_file' not in request.files:
+            return jsonify({'error': '파일이 누락되었습니다.'}), 400
             
-        file = request.files['file']
-        if file.filename == '':
+        vtt_file = request.files['vtt_file']
+        curriculum_file = request.files['curriculum_file']
+        
+        if vtt_file.filename == '' or curriculum_file.filename == '':
             return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
             
-        if not file.filename.endswith('.vtt'):
+        if not vtt_file.filename.endswith('.vtt'):
             return jsonify({'error': 'VTT 파일만 업로드 가능합니다.'}), 400
             
-        # 임시 파일로 저장
-        temp_path = f"temp_{datetime.now().strftime('%Y%m%d_%H%M%S')}.vtt"
-        file.save(temp_path)
-        
         try:
-            # VTT 파일 읽기
-            vtt = webvtt.read(temp_path)
-            vtt_content = "\n".join([caption.text for caption in vtt])
+            # VTT 파일 분석
+            vtt_content = vtt_file.stream.read().decode('utf-8')
+            vtt_analysis = analyze_vtt_content(vtt_content)
             
-            # VTT 내용 분석
-            analysis_result = analyze_vtt_content(vtt_content)
-            
-            # 교과목 매칭 분석 (topics가 제공된 경우)
-            topics = request.form.get('topics')
-            curriculum_match = None
-            if topics:
+            # 커리큘럼 파일 처리
+            curriculum_content = curriculum_file.stream.read()
+            if curriculum_file.filename.endswith(('.xlsx', '.xls')):
+                curriculum_content = excel_to_json(curriculum_content)
+            else:
+                curriculum_content = curriculum_content.decode('utf-8')
                 try:
-                    topics_list = json.loads(topics)
-                    curriculum_match = analyze_curriculum_match(vtt_content, topics_list)
+                    json.loads(curriculum_content)
                 except json.JSONDecodeError:
-                    print("교과목 정보 파싱 실패")
-                    curriculum_match = None
-                    
-            # 임시 파일 삭제
-            os.remove(temp_path)
+                    return jsonify({'error': '올바른 JSON 형식이 아닙니다.'}), 400
+            
+            # 커리큘럼 분석
+            curriculum_analysis = analyze_curriculum(curriculum_content, vtt_content)
             
             return jsonify({
-                'analysis': analysis_result,
-                'curriculum_match': curriculum_match
+                'vtt_analysis': vtt_analysis,
+                'curriculum_analysis': curriculum_analysis
             })
             
-        except Exception as e:
-            print(f"VTT 파일 처리 중 오류 발생: {str(e)}")
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            return jsonify({'error': 'VTT 파일 처리 중 오류가 발생했습니다.'}), 500
+        except UnicodeDecodeError:
+            return jsonify({'error': '파일 인코딩이 올바르지 않습니다. UTF-8 형식의 파일을 업로드해주세요.'}), 400
             
     except Exception as e:
-        print(f"VTT 분석 요청 처리 중 오류 발생: {str(e)}")
-        return jsonify({'error': 'VTT 분석 요청 처리 중 오류가 발생했습니다.'}), 500
+        print(f"분석 중 오류 발생: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': f'서버 오류가 발생했습니다: {str(e)}'}), 500
 
 @app.route('/analyze_chat', methods=['POST'])
 def analyze_chat():
@@ -697,17 +738,26 @@ def analyze_chat():
         if file.filename == '':
             return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
             
-        # 파일 내용 읽기
+        # 파일 내용을 메모리에 저장
         chat_content = file.read().decode('utf-8')
         
+        if not chat_content.strip():
+            return jsonify({'error': '파일이 비어있습니다.'}), 400
+            
         # 채팅 내용 분석
         analysis_result = analyze_chat_log(chat_content)
         
+        if not analysis_result:
+            return jsonify({'error': '분석 결과를 생성할 수 없습니다.'}), 500
+            
         return jsonify({'analysis': analysis_result})
         
+    except UnicodeDecodeError:
+        return jsonify({'error': '파일 인코딩이 올바르지 않습니다. UTF-8 형식의 파일을 업로드해주세요.'}), 400
     except Exception as e:
         print(f"채팅 분석 요청 처리 중 오류 발생: {str(e)}")
-        return jsonify({'error': '채팅 분석 요청 처리 중 오류가 발생했습니다.'}), 500
+        print(traceback.format_exc())
+        return jsonify({'error': f'서버 오류가 발생했습니다: {str(e)}'}), 500
 
 @app.errorhandler(500)
 def internal_error(error):

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VTT 파일 및 커리큘럼 분석 - AI 강의 분석기</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         .nav-bar {
@@ -393,12 +394,14 @@
                     document.getElementById('vttAnalysis').innerHTML = formatVttAnalysis(data.vtt_analysis);
                     
                     // 커리큘럼 분석 결과 표시
-                    displayCurriculumAnalysis(data);
+                    if (data.curriculum_analysis) {
+                        displayCurriculumAnalysis(data.curriculum_analysis);
+                    }
                     
                     results.style.display = 'block';
                     
                     // 분석 완료 메시지 표시 후 스피너 숨기기
-                    progressMessage.textContent = "분석이 완료되었습니다!";
+                    progressMessage.textContent = data.progress || "분석이 완료되었습니다!";
                     setTimeout(() => {
                         loadingSpinner.style.display = 'none';
                     }, 1000);
@@ -411,6 +414,8 @@
         });
 
         function formatVttAnalysis(content) {
+            if (!content) return '<p>분석 결과가 없습니다.</p>';
+            
             const sections = content.split(/(?=\d\. )/);
             let formattedContent = '';
 
@@ -435,7 +440,7 @@
                 }
             });
 
-            return formattedContent;
+            return formattedContent || '<p>분석 결과가 없습니다.</p>';
         }
 
         function createChart(matchedSubjects) {
@@ -458,7 +463,7 @@
             
             // 매칭된 교과목이 없는 경우 처리
             if (!matchedSubjects || matchedSubjects.length === 0) {
-                console.log('매칭된 교과목이 없습니다.');
+                canvas.parentElement.innerHTML = '<p>매칭된 교과목이 없습니다.</p>';
                 return;
             }
             
@@ -524,16 +529,16 @@
             const matchesContent = document.getElementById('curriculum-matches-content');
             
             // 종합 분석 결과 표시
-            if (data.curriculum_analysis && data.curriculum_analysis.summary) {
-                summaryText.textContent = data.curriculum_analysis.summary;
+            if (data.summary) {
+                summaryText.textContent = data.summary;
             }
             
             // 교과목별 달성도 표시
-            if (data.curriculum_analysis && data.curriculum_analysis.matched_subjects) {
+            if (data.matched_subjects) {
                 const subjectsList = document.createElement('ul');
                 subjectsList.className = 'matched-subjects-list';
                 
-                data.curriculum_analysis.matched_subjects.forEach(subject => {
+                data.matched_subjects.forEach(subject => {
                     const li = document.createElement('li');
                     li.innerHTML = `
                         <span class="subject-name">${subject.name}</span>
@@ -552,7 +557,7 @@
             const detailsMatchesDiv = document.getElementById('matchingDetails');
             detailsMatchesDiv.innerHTML = '';
             
-            if (data.curriculum_analysis.details_matches) {
+            if (data.details_matches) {
                 const detailsTable = document.createElement('table');
                 detailsTable.className = 'details-table';
                 detailsTable.innerHTML = `
@@ -564,14 +569,14 @@
                         </tr>
                     </thead>
                     <tbody>
-                        ${generateDetailsTableRows(data.curriculum_analysis.details_matches)}
+                        ${generateDetailsTableRows(data.details_matches)}
                     </tbody>
                 `;
                 detailsMatchesDiv.appendChild(detailsTable);
             }
             
             // 차트 생성
-            createChart(data.curriculum_analysis.matched_subjects);
+            createChart(data.matched_subjects);
         }
     </script>
 </body>
