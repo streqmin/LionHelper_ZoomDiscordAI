@@ -271,76 +271,25 @@ def extract_curriculum_topics(curriculum_content):
         if not subjects:
             raise ValueError("커리큘럼에서 교과목명과 세부내용을 찾을 수 없습니다.")
         
-        system_prompt = f"""
-        당신은 IT 분야의 전문가로서, 소프트웨어 개발, 디자인, 게임 개발, 모바일 앱 개발 등 다양한 기술 분야에 대한 깊은 이해를 가지고 있습니다.
-        다음 커리큘럼의 교과목별 핵심 키워드를 추출해주세요.
-        각 교과목의 세부내용을 바탕으로 다음과 같은 항목들을 고려하여 키워드를 추출합니다:
-
-        1. 주요 개념과 이론
-        2. 핵심 기술과 프레임워크
-        3. 개발/디자인 도구와 플랫폼
-        4. 프로그래밍 언어, 라이브러리, 소프트웨어
-        5. 산업 표준과 방법론
-        6. 디자인 패턴과 사용자 경험 원칙
-        7. 최신 기술 트렌드와 실무 적용 사례
-
-        결과는 다음과 같은 JSON 형식으로 반환해주세요:
-        {{
-            "subject_keywords": {{
-                "교과목명1": ["키워드1", "키워드2", ...],
-                "교과목명2": ["키워드1", "키워드2", ...],
-                ...
-            }}
-        }}
-
-        각 교과목별로 최소 3개 이상의 관련 키워드를 추출해주세요.
-        키워드는 실제 강의 내용과 매칭될 수 있도록 구체적이고 현업에서 사용되는 용어로 작성해주세요.
-        교과목의 성격에 따라 적절한 항목들을 선택적으로 적용하여 키워드를 추출해주세요.
-        """
-        
-        subjects_json = {
-            "subjects": [
-                {"name": name, "details": details}
-                for name, details in subjects.items()
-            ]
+        # 기본 키워드 생성
+        default_topics = {
+            "subject_keywords": {},
+            "subjects_details": subjects
         }
         
-        print("Claude에 키워드 추출 요청")
-        try:
-            response = client.create_completion(
-                model="claude-3-haiku-20240307",
-                max_tokens=4096,
-                temperature=0.7,
-                prompt=f"\n\nHuman: {system_prompt}\n\n{json.dumps(subjects_json, ensure_ascii=False)}\n\nAssistant:"
-            )
-            
-            if not response or not response.strip():
-                raise ValueError("API 응답이 비어있습니다.")
-                
-            response_text = response.strip()
-            if not response_text:
-                raise ValueError("API 응답 텍스트가 비어있습니다.")
-            
-            topics = json.loads(response_text)
-            print("추출된 키워드:")
-            print(json.dumps(topics, ensure_ascii=False, indent=2))
-            
-            if not isinstance(topics, dict) or 'subject_keywords' not in topics:
-                raise ValueError("API 응답이 올바른 형식이 아닙니다.")
-            
-            topics['subjects_details'] = subjects
-            return topics
-            
-        except requests.exceptions.RequestException as e:
-            print(f"API 요청 중 오류 발생: {str(e)}")
-            # 기본 키워드 생성
-            default_topics = {
-                "subject_keywords": {
-                    subject_name: ["기본 키워드"] for subject_name in subjects.keys()
-                },
-                "subjects_details": subjects
-            }
-            return default_topics
+        # 각 교과목별로 기본 키워드 생성
+        for subject_name, details in subjects.items():
+            keywords = []
+            # 세부내용을 줄바꿈으로 분리하여 각 항목을 키워드로 사용
+            for detail in details.split('\n'):
+                if detail.strip():
+                    keywords.append(detail.strip())
+            default_topics["subject_keywords"][subject_name] = keywords
+        
+        print("기본 키워드 생성 완료")
+        print(json.dumps(default_topics, ensure_ascii=False, indent=2))
+        
+        return default_topics
             
     except Exception as e:
         print(f"주제 추출 중 오류 발생: {str(e)}")
@@ -378,10 +327,39 @@ def analyze_curriculum_match(vtt_content, topics):
             reverse=True
         )
         
+        # 종합 분석 생성
+        summary_prompt = f"""
+        다음 강의 내용과 커리큘럼 매칭 결과를 바탕으로, 강의의 주요 초점과 커버리지를 2-3문장으로 요약해주세요.
+        강의가 어떤 주제에 집중되어 있고, 어떤 부분이 잘 다루어졌는지 설명해주세요.
+
+        [강의 내용]
+        {vtt_content}
+
+        [매칭 결과]
+        {json.dumps(subject_matches, ensure_ascii=False)}
+        """
+        
+        try:
+            summary_response = client.create_completion(
+                model="claude-3-haiku-20240307",
+                max_tokens=1000,
+                temperature=0.7,
+                prompt=f"\n\nHuman: {summary_prompt}\n\nAssistant:"
+            )
+            
+            if summary_response is None:
+                summary = "강의 내용 분석 결과를 생성할 수 없습니다."
+            else:
+                summary = summary_response.strip()
+        except Exception as e:
+            print(f"종합 결과 생성 중 오류 발생: {str(e)}")
+            summary = "강의 내용 분석 결과를 생성할 수 없습니다."
+        
         return {
             'subject_matches': dict(sorted_matches),
             'total_subjects': len(subject_keywords),
-            'matched_subjects': len(subject_matches)
+            'matched_subjects': len(subject_matches),
+            'summary': summary
         }
         
     except Exception as e:
