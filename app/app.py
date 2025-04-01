@@ -1,7 +1,8 @@
 import os
 import json
 import pandas as pd
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
+from flask_socketio import SocketIO
 import webvtt
 import requests
 from datetime import datetime
@@ -11,11 +12,13 @@ import time
 import re
 from io import StringIO, BytesIO
 import sys
+from app.tasks import analyze_vtt_task
 
 # 환경 변수 로드
 load_dotenv()
 
 app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 sys.setrecursionlimit(10000)  # 재귀 깊이 제한 증가
 
@@ -542,36 +545,53 @@ def analyze_vtt():
         if vtt_file.filename == '' or curriculum_file.filename == '':
             return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
             
-        # 1. VTT 파일 분석
+        # 파일 내용 읽기
         vtt_content = vtt_file.read().decode('utf-8')
-        analyzed_content = analyze_vtt_content(vtt_content)
+        curriculum_content = curriculum_file.read().decode('utf-8')
         
-        # 2. 커리큘럼 파일 처리
-        curriculum_content = process_curriculum_file(curriculum_file)
+        # Celery 작업 시작
+        task = analyze_vtt_task.delay(vtt_content, curriculum_content)
         
-        # 3. 커리큘럼 주제 추출
-        topics = extract_curriculum_topics(curriculum_content)
-        if not topics:
-            return jsonify({'error': '커리큘럼 분석에 실패했습니다.'}), 500
-            
-        # 4. 매칭 분석
-        match_analysis = analyze_curriculum_match(analyzed_content, topics)
-        if not match_analysis:
-            return jsonify({'error': '매칭 분석에 실패했습니다.'}), 500
-            
-        # 5. 결과 생성
-        result = {
-            'vtt_content': analyzed_content,
-            'curriculum_analysis': topics,
-            'match_analysis': match_analysis
-        }
-        
-        return jsonify(result)
+        return jsonify({
+            'task_id': task.id,
+            'status': 'started',
+            'message': '분석이 시작되었습니다.'
+        })
         
     except Exception as e:
         print(f"분석 중 오류 발생: {str(e)}")
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
+
+@app.route('/task_status/<task_id>')
+def get_task_status(task_id):
+    task = analyze_vtt_task.AsyncResult(task_id)
+    if task.state == 'PENDING':
+        response = {
+            'state': task.state,
+            'status': '분석이 시작되기를 기다리는 중...',
+            'progress': 0
+        }
+    elif task.state == 'PROGRESS':
+        response = {
+            'state': task.state,
+            'status': f'분석 중... ({task.info.get("step", "")})',
+            'progress': task.info.get('progress', 0)
+        }
+    elif task.state == 'SUCCESS':
+        response = {
+            'state': task.state,
+            'status': '분석이 완료되었습니다.',
+            'progress': 100,
+            'result': task.result
+        }
+    else:
+        response = {
+            'state': task.state,
+            'status': f'오류 발생: {task.info.get("error", "알 수 없는 오류")}',
+            'progress': 0
+        }
+    return jsonify(response)
 
 @app.route('/analyze_chat', methods=['POST'])
 def analyze_chat():
@@ -616,5 +636,4 @@ def internal_error(error):
                          details=error_message)
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8000))
-    app.run(host='0.0.0.0', port=port) 
+    socketio.run(app, debug=True) 

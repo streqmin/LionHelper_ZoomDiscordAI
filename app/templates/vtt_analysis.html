@@ -351,67 +351,77 @@
     <script>
         let subjectChart = null;  // 전역 변수로 차트 객체 선언
 
-        document.addEventListener('DOMContentLoaded', function() {
-            const form = document.getElementById('upload-form');
-            const loadingSpinner = document.getElementById('loading-spinner');
-            const results = document.getElementById('analysis-result');
-            const progressMessage = document.querySelector('#loading-spinner p');
-
-            form.addEventListener('submit', async function(e) {
-                e.preventDefault();
-                
-                const formData = new FormData(form);
-                
-                if (!formData.get('vtt_file') || !formData.get('curriculum_file')) {
-                    alert('모든 파일을 선택해주세요.');
-                    return;
+        // Socket.IO 연결
+        const socket = io();
+        
+        // 분석 시작 함수
+        function startAnalysis() {
+            const formData = new FormData(document.getElementById('upload-form'));
+            
+            // 로딩 표시
+            document.getElementById('loading-spinner').style.display = 'block';
+            document.getElementById('analysis-result').style.display = 'none';
+            
+            // 분석 요청
+            fetch('/analyze_vtt', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
                 }
-
-                loadingSpinner.style.display = 'block';
-                results.style.display = 'none';
-                progressMessage.textContent = "VTT 파일을 읽는 중...";
                 
-                try {
-                    const response = await fetch('/analyze_vtt', {
-                        method: 'POST',
-                        body: formData
-                    });
-
-                    if (!response.ok) {
-                        throw new Error('서버 오류가 발생했습니다.');
-                    }
-
-                    progressMessage.textContent = "VTT 내용과 커리큘럼을 분석하는 중...";
-                    const data = await response.json();
-                    
-                    if (data.error) {
-                        throw new Error(data.error);
-                    }
-
-                    progressMessage.textContent = "분석 결과를 처리하는 중...";
-                    
-                    // VTT 분석 결과를 표시
-                    document.getElementById('vttAnalysis').innerHTML = formatVttAnalysis(data.vtt_analysis);
-                    
-                    // 커리큘럼 분석 결과 표시
-                    if (data.curriculum_analysis) {
-                        displayCurriculumAnalysis(data.curriculum_analysis);
-                    }
-                    
-                    results.style.display = 'block';
-                    
-                    // 분석 완료 메시지 표시 후 스피너 숨기기
-                    progressMessage.textContent = data.progress || "분석이 완료되었습니다!";
-                    setTimeout(() => {
-                        loadingSpinner.style.display = 'none';
-                    }, 1000);
-                } catch (error) {
-                    progressMessage.textContent = "오류가 발생했습니다";
-                    alert('오류가 발생했습니다: ' + error.message);
-                    loadingSpinner.style.display = 'none';
-                }
+                // 작업 ID 저장
+                const taskId = data.task_id;
+                
+                // 상태 확인 시작
+                checkTaskStatus(taskId);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('loading-spinner').style.display = 'none';
+                alert('분석 중 오류가 발생했습니다: ' + error.message);
             });
-        });
+        }
+        
+        // 작업 상태 확인 함수
+        function checkTaskStatus(taskId) {
+            fetch(`/task_status/${taskId}`)
+            .then(response => response.json())
+            .then(data => {
+                // 진행 상태 업데이트
+                updateProgress(data.progress, data.status);
+                
+                if (data.state === 'SUCCESS') {
+                    // 분석 완료
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    document.getElementById('analysis-result').style.display = 'block';
+                    displayResults(data.result);
+                } else if (data.state === 'FAILURE') {
+                    // 오류 발생
+                    document.getElementById('loading-spinner').style.display = 'none';
+                    alert('분석 중 오류가 발생했습니다: ' + data.status);
+                } else {
+                    // 진행 중
+                    setTimeout(() => checkTaskStatus(taskId), 2000);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('loading-spinner').style.display = 'none';
+                alert('상태 확인 중 오류가 발생했습니다: ' + error.message);
+            });
+        }
+        
+        // 진행 상태 업데이트 함수
+        function updateProgress(progress, status) {
+            const progressBar = document.querySelector('.progress-bar');
+            const progressText = document.querySelector('.progress-text');
+            progressBar.style.width = `${progress}%`;
+            progressText.textContent = status;
+        }
 
         function formatVttAnalysis(content) {
             if (!content) return '<p>분석 결과가 없습니다.</p>';
