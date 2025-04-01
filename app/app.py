@@ -13,9 +13,13 @@ import re
 from io import StringIO, BytesIO
 import sys
 from app.tasks import analyze_vtt_task
+from anthropic import Anthropic
 
 # 환경 변수 로드
 load_dotenv()
+
+# Anthropic 클라이언트 초기화
+client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
