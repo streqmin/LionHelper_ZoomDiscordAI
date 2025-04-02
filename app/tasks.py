@@ -15,12 +15,21 @@ from datetime import datetime, timedelta
 # 환경 변수 로드
 load_dotenv()
 
+# Celery 인스턴스 생성 및 설정
+celery = Celery('app')
+celery.conf.update({
+    'broker_url': Config.CELERY_BROKER_URL,
+    'result_backend': Config.CELERY_RESULT_BACKEND,
+    'task_serializer': Config.CELERY_TASK_SERIALIZER,
+    'result_serializer': Config.CELERY_RESULT_SERIALIZER,
+    'accept_content': Config.CELERY_ACCEPT_CONTENT,
+    'timezone': Config.CELERY_TIMEZONE,
+    'enable_utc': Config.CELERY_ENABLE_UTC,
+    'beat_schedule': Config.CELERY_BEAT_SCHEDULE
+})
+
 # Anthropic 클라이언트 초기화
 client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-
-# Celery 인스턴스 생성
-celery = Celery('app')
-celery.conf.update(Config.__dict__)
 
 # Flask 애플리케이션 컨텍스트 설정
 celery.conf.update(app.config)
