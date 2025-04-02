@@ -1,22 +1,23 @@
-from celery import Celery
-from app import app
+import os
 import json
+from datetime import datetime, timedelta
+from celery import Celery
+from anthropic import Anthropic
+from app.config import Config
 import webvtt
 from io import StringIO
 import pandas as pd
 import traceback
-import os
 from dotenv import load_dotenv
-from anthropic import Anthropic
-from app.config import Config
 import time
-from datetime import datetime, timedelta
 
 # 환경 변수 로드
 load_dotenv()
 
-# Celery 인스턴스 생성 및 설정
+# Celery 인스턴스 생성
 celery = Celery('app')
+
+# 설정 직접 지정
 celery.conf.update({
     'broker_url': Config.CELERY_BROKER_URL,
     'result_backend': Config.CELERY_RESULT_BACKEND,
@@ -28,18 +29,15 @@ celery.conf.update({
     'beat_schedule': Config.CELERY_BEAT_SCHEDULE
 })
 
-# Anthropic 클라이언트 초기화
-client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-
-# Flask 애플리케이션 컨텍스트 설정
-celery.conf.update(app.config)
-
+# ContextTask 수정
 class ContextTask(celery.Task):
     def __call__(self, *args, **kwargs):
-        with app.app_context():
-            return self.run(*args, **kwargs)
+        return self.run(*args, **kwargs)
 
 celery.Task = ContextTask
+
+# Anthropic 클라이언트 초기화
+client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
 @celery.task
 def analyze_vtt_task(file_path):
