@@ -6,6 +6,8 @@ from anthropic import Anthropic
 from datetime import datetime
 import json
 import logging
+import time
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -20,11 +22,34 @@ if not api_key:
     logger.error("ANTHROPIC_API_KEY not found in environment variables")
     raise ValueError("ANTHROPIC_API_KEY is required")
 
-client = Anthropic(api_key=api_key)
+# 클라이언트 설정
+client = Anthropic(
+    api_key=api_key,
+    timeout=30  # 30초 타임아웃 설정
+)
 logger.info("Anthropic client initialized successfully")
 
 # 업로드 폴더 생성
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10)
+)
+def call_claude_api(prompt):
+    """Claude API 호출 함수 with 재시도 로직"""
+    try:
+        completion = client.completions.create(
+            prompt=prompt,
+            model="claude-2.1",
+            max_tokens_to_sample=4000,
+            stop_sequences=["\n\nHuman:"],
+            temperature=0.7
+        )
+        return completion
+    except Exception as e:
+        logger.error(f"API call failed: {str(e)}")
+        raise
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
@@ -65,16 +90,10 @@ def analyze_vtt():
             prompt = f"\n\nHuman: 당신은 줌 회의록 분석 전문가입니다. 다음 VTT 파일을 분석해주세요:\n\n{content}\n\n다음 형식으로 분석 결과를 제공해주세요:\n\n# 회의 요약\n- 회의 주제:\n- 주요 참석자:\n- 회의 시간:\n- 핵심 논의 사항:\n- 결정사항:\n- 후속 조치사항:\n\n# 상세 내용\n[시간대별 주요 내용]\n\n# 주요 키워드\n[회의에서 언급된 주요 키워드들]\n\n# 액션 아이템\n[구체적인 할 일과 담당자]\n\n# 추가 참고사항\n[기타 중요한 정보나 맥락]\n\nAssistant:"
             
             try:
-                completion = client.completions.create(
-                    prompt=prompt,
-                    model="claude-2.1",
-                    max_tokens_to_sample=4000,
-                    stop_sequences=["\n\nHuman:"],
-                    temperature=0.7
-                )
+                completion = call_claude_api(prompt)
                 logger.info("Claude API call successful")
             except Exception as api_error:
-                logger.error(f"Claude API error: {str(api_error)}")
+                logger.error(f"Claude API error after retries: {str(api_error)}")
                 return jsonify({
                     'status': 'error',
                     'error': f"API 호출 중 오류 발생: {str(api_error)}"
@@ -127,16 +146,10 @@ def analyze_chat():
             prompt = f"\n\nHuman: 당신은 채팅 로그 분석 전문가입니다. 다음 채팅 로그를 분석해주세요:\n\n{content}\n\n다음 형식으로 분석 결과를 제공해주세요:\n\n# 채팅 요약\n- 대화 주제:\n- 주요 참여자:\n- 핵심 논의 사항:\n- 결정사항:\n- 후속 조치사항:\n\n# 주요 키워드\n[대화에서 언급된 주요 키워드들]\n\n# 감정/태도 분석\n[대화의 전반적인 톤과 참여자들의 태도]\n\n# 추가 참고사항\n[기타 중요한 정보나 맥락]\n\nAssistant:"
             
             try:
-                completion = client.completions.create(
-                    prompt=prompt,
-                    model="claude-2.1",
-                    max_tokens_to_sample=4000,
-                    stop_sequences=["\n\nHuman:"],
-                    temperature=0.7
-                )
+                completion = call_claude_api(prompt)
                 logger.info("Claude API call successful")
             except Exception as api_error:
-                logger.error(f"Claude API error: {str(api_error)}")
+                logger.error(f"Claude API error after retries: {str(api_error)}")
                 return jsonify({
                     'status': 'error',
                     'error': f"API 호출 중 오류 발생: {str(api_error)}"
