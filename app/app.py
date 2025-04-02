@@ -508,10 +508,13 @@ def analyze_chat_log(chat_content):
         5. 보안 및 개인정보 보호 관점 고려
         """
         
-        # API 요청 형식 수정
+        print("채팅 분석 시작...")
+        
+        # API 요청
         response = client.messages.create(
             model="claude-3-haiku-20240307",
             max_tokens=4096,
+            temperature=0.7,
             messages=[
                 {
                     "role": "system",
@@ -524,15 +527,28 @@ def analyze_chat_log(chat_content):
             ]
         )
         
-        if not response or not response.content:
-            return "채팅 분석 결과를 가져올 수 없습니다."
+        print("API 응답 수신 완료")
+        
+        if not response:
+            print("API 응답이 비어있습니다.")
+            return None
             
-        return response.content[0].text
+        if not response.content or len(response.content) == 0:
+            print("API 응답에 content가 없습니다.")
+            return None
+            
+        analysis_result = response.content[0].text
+        if not analysis_result:
+            print("분석 결과가 비어있습니다.")
+            return None
+            
+        print("채팅 분석 완료")
+        return analysis_result
         
     except Exception as e:
         print(f"채팅 분석 중 오류 발생: {str(e)}")
         print(traceback.format_exc())
-        return "채팅 분석 중 오류가 발생했습니다."
+        return None
 
 @app.route('/')
 def index():
@@ -617,25 +633,28 @@ def analyze_chat():
             return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
             
         # 파일 내용을 메모리에 저장
-        chat_content = file.read().decode('utf-8')
-        
+        try:
+            chat_content = file.read().decode('utf-8')
+        except UnicodeDecodeError:
+            return jsonify({'error': '파일 인코딩이 올바르지 않습니다. UTF-8 형식의 파일을 업로드해주세요.'}), 400
+            
         if not chat_content.strip():
             return jsonify({'error': '파일이 비어있습니다.'}), 400
             
         # 채팅 내용 분석
+        print("채팅 분석 시작")
         analysis_result = analyze_chat_log(chat_content)
         
-        if not analysis_result:
-            return jsonify({'error': '분석 결과를 생성할 수 없습니다.'}), 500
+        if analysis_result is None:
+            return jsonify({'error': '채팅 분석에 실패했습니다. 다시 시도해주세요.'}), 500
             
+        print("채팅 분석 완료")
         return jsonify({'analysis': analysis_result})
         
-    except UnicodeDecodeError:
-        return jsonify({'error': '파일 인코딩이 올바르지 않습니다. UTF-8 형식의 파일을 업로드해주세요.'}), 400
     except Exception as e:
         print(f"채팅 분석 요청 처리 중 오류 발생: {str(e)}")
         print(traceback.format_exc())
-        return jsonify({'error': f'서버 오류가 발생했습니다: {str(e)}'}), 500
+        return jsonify({'error': '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'}), 500
 
 @app.errorhandler(500)
 def internal_error(error):
