@@ -13,11 +13,7 @@ from anthropic import Anthropic
 load_dotenv()
 
 # Anthropic 클라이언트 초기화
-client = Anthropic(
-    api_key=os.getenv('ANTHROPIC_API_KEY'),
-    http_client=None,
-    base_url="https://api.anthropic.com/v1"
-)
+client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
 # Celery 인스턴스 생성
 celery = Celery('tasks')
