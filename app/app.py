@@ -44,9 +44,31 @@ logger.info("Anthropic client initialized successfully")
 # 업로드 폴더 생성
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+def split_content(content, max_length=2000):
+    """콘텐츠를 작은 청크로 분할"""
+    chunks = []
+    lines = content.split('\n')
+    current_chunk = []
+    current_length = 0
+    
+    for line in lines:
+        line_length = len(line) + 1  # +1 for newline
+        if current_length + line_length > max_length and current_chunk:
+            chunks.append('\n'.join(current_chunk))
+            current_chunk = [line]
+            current_length = line_length
+        else:
+            current_chunk.append(line)
+            current_length += line_length
+    
+    if current_chunk:
+        chunks.append('\n'.join(current_chunk))
+    
+    return chunks
+
 @retry(
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=2, min=10, max=30)
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10)
 )
 def call_claude_api(prompt):
     """Claude API 호출 함수 with 재시도 로직"""
@@ -54,16 +76,50 @@ def call_claude_api(prompt):
         completion = client.completions.create(
             prompt=prompt,
             model="claude-2.1",
-            max_tokens_to_sample=4000,
+            max_tokens_to_sample=2000,
             stop_sequences=["\n\nHuman:"],
             temperature=0.7
         )
         return completion
     except Exception as e:
         logger.error(f"API call failed: {str(e)}")
-        if isinstance(e, httpx.ConnectError):
-            logger.error("Connection error occurred. Checking network connectivity...")
         raise
+
+def analyze_content_in_chunks(content, analysis_type='vtt'):
+    """청크 단위로 콘텐츠 분석"""
+    chunks = split_content(content)
+    total_chunks = len(chunks)
+    logger.info(f"Split content into {total_chunks} chunks")
+    
+    all_results = []
+    for i, chunk in enumerate(chunks, 1):
+        logger.info(f"Processing chunk {i}/{total_chunks}")
+        
+        if analysis_type == 'vtt':
+            prompt = f"\n\nHuman: 당신은 줌 회의록 분석 전문가입니다. 다음은 전체 회의록의 {i}/{total_chunks} 부분입니다. 이 부분을 분석해주세요:\n\n{chunk}\n\n다음 형식으로 분석 결과를 제공해주세요:\n\n# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n# 주요 키워드\n[이 부분의 주요 키워드들]\n\n# 중요 포인트\n[이 부분에서 특별히 주목할 만한 내용]\n\nAssistant:"
+        else:
+            prompt = f"\n\nHuman: 당신은 채팅 로그 분석 전문가입니다. 다음은 전체 채팅의 {i}/{total_chunks} 부분입니다. 이 부분을 분석해주세요:\n\n{chunk}\n\n다음 형식으로 분석 결과를 제공해주세요:\n\n# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n# 주요 키워드\n[이 부분의 주요 키워드들]\n\n# 대화 분위기\n[이 부분의 대화 톤과 분위기]\n\nAssistant:"
+        
+        try:
+            completion = call_claude_api(prompt)
+            all_results.append(completion.completion)
+            time.sleep(1)  # API 호출 간 간격 추가
+        except Exception as e:
+            logger.error(f"Failed to process chunk {i}: {str(e)}")
+            all_results.append(f"[이 부분 처리 중 오류 발생: {str(e)}]")
+    
+    # 최종 요약 생성
+    if analysis_type == 'vtt':
+        final_prompt = f"\n\nHuman: 다음은 회의록 각 부분의 분석 결과입니다. 이를 종합하여 최종 요약을 만들어주세요:\n\n{' '.join(all_results)}\n\n다음 형식으로 전체 요약을 제공해주세요:\n\n# 회의 요약\n- 회의 주제:\n- 주요 참석자:\n- 회의 시간:\n- 핵심 논의 사항:\n- 결정사항:\n- 후속 조치사항:\n\n# 상세 내용\n[시간대별 주요 내용]\n\n# 주요 키워드\n[회의에서 언급된 주요 키워드들]\n\n# 액션 아이템\n[구체적인 할 일과 담당자]\n\n# 추가 참고사항\n[기타 중요한 정보나 맥락]\n\nAssistant:"
+    else:
+        final_prompt = f"\n\nHuman: 다음은 채팅 로그 각 부분의 분석 결과입니다. 이를 종합하여 최종 요약을 만들어주세요:\n\n{' '.join(all_results)}\n\n다음 형식으로 전체 요약을 제공해주세요:\n\n# 채팅 요약\n- 대화 주제:\n- 주요 참여자:\n- 핵심 논의 사항:\n- 결정사항:\n- 후속 조치사항:\n\n# 주요 키워드\n[대화에서 언급된 주요 키워드들]\n\n# 감정/태도 분석\n[대화의 전반적인 톤과 참여자들의 태도]\n\n# 추가 참고사항\n[기타 중요한 정보나 맥락]\n\nAssistant:"
+    
+    try:
+        final_completion = call_claude_api(final_prompt)
+        return final_completion.completion
+    except Exception as e:
+        logger.error(f"Failed to generate final summary: {str(e)}")
+        return "\n".join(all_results)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
@@ -100,23 +156,14 @@ def analyze_vtt():
                 content = f.read()
             
             logger.info("Starting VTT analysis with Claude API")
-            # Claude API 호출
-            prompt = f"\n\nHuman: 당신은 줌 회의록 분석 전문가입니다. 다음 VTT 파일을 분석해주세요:\n\n{content}\n\n다음 형식으로 분석 결과를 제공해주세요:\n\n# 회의 요약\n- 회의 주제:\n- 주요 참석자:\n- 회의 시간:\n- 핵심 논의 사항:\n- 결정사항:\n- 후속 조치사항:\n\n# 상세 내용\n[시간대별 주요 내용]\n\n# 주요 키워드\n[회의에서 언급된 주요 키워드들]\n\n# 액션 아이템\n[구체적인 할 일과 담당자]\n\n# 추가 참고사항\n[기타 중요한 정보나 맥락]\n\nAssistant:"
             
-            try:
-                completion = call_claude_api(prompt)
-                logger.info("Claude API call successful")
-            except Exception as api_error:
-                logger.error(f"Claude API error after retries: {str(api_error)}")
-                return jsonify({
-                    'status': 'error',
-                    'error': f"API 호출 중 오류 발생: {str(api_error)}"
-                }), 500
+            # 청크 단위로 분석 수행
+            result_text = analyze_content_in_chunks(content, 'vtt')
             
             # 분석 결과
             result = {
                 'status': 'success',
-                'result': completion.completion,
+                'result': result_text,
                 'timestamp': datetime.now().isoformat()
             }
             
@@ -156,23 +203,14 @@ def analyze_chat():
                 content = f.read()
             
             logger.info("Starting chat analysis with Claude API")
-            # Claude API 호출
-            prompt = f"\n\nHuman: 당신은 채팅 로그 분석 전문가입니다. 다음 채팅 로그를 분석해주세요:\n\n{content}\n\n다음 형식으로 분석 결과를 제공해주세요:\n\n# 채팅 요약\n- 대화 주제:\n- 주요 참여자:\n- 핵심 논의 사항:\n- 결정사항:\n- 후속 조치사항:\n\n# 주요 키워드\n[대화에서 언급된 주요 키워드들]\n\n# 감정/태도 분석\n[대화의 전반적인 톤과 참여자들의 태도]\n\n# 추가 참고사항\n[기타 중요한 정보나 맥락]\n\nAssistant:"
             
-            try:
-                completion = call_claude_api(prompt)
-                logger.info("Claude API call successful")
-            except Exception as api_error:
-                logger.error(f"Claude API error after retries: {str(api_error)}")
-                return jsonify({
-                    'status': 'error',
-                    'error': f"API 호출 중 오류 발생: {str(api_error)}"
-                }), 500
+            # 청크 단위로 분석 수행
+            result_text = analyze_content_in_chunks(content, 'chat')
             
             # 분석 결과
             result = {
                 'status': 'success',
-                'result': completion.completion,
+                'result': result_text,
                 'timestamp': datetime.now().isoformat()
             }
             
