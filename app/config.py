@@ -1,9 +1,23 @@
 import os
-from celery.schedules import crontab
+from datetime import timedelta
 
 class Config:
-    # Flask 설정
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'dev')
+    # 기본 설정
+    SECRET_KEY = os.getenv('SECRET_KEY', 'dev')
+    
+    # 파일 업로드 설정
+    UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads')
+    ALLOWED_EXTENSIONS = {'txt', 'vtt'}
+    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
+    
+    # 파일 보관 기간
+    MAX_AGE_HOURS = 24  # 24시간
+    
+    # Anthropic API 설정
+    ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
+    
+    # Discord Webhook 설정
+    DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
     
     # Celery 설정
     CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
@@ -20,18 +34,4 @@ class Config:
             'task': 'app.tasks.cleanup_old_files',
             'schedule': crontab(hour=0, minute=0)  # 매일 자정에 실행
         }
-    }
-    
-    # 파일 업로드 설정
-    UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads')
-    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
-    ALLOWED_EXTENSIONS = {'vtt', 'txt'}
-    
-    # Anthropic API 설정
-    ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
-    
-    # Discord Webhook 설정
-    DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
-    
-    # 파일 정리 설정
-    MAX_AGE_HOURS = 24  # 24시간 이상 된 파일 삭제 
+    } 

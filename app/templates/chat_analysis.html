@@ -251,53 +251,37 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const chatForm = document.getElementById('chat-form');
+            const form = document.getElementById('chat-form');
             const loadingSpinner = document.getElementById('loading-spinner');
-            const chatResults = document.getElementById('chatAnalysis');
-            const progressMessage = document.querySelector('#loading-spinner p');
+            const resultSection = document.getElementById('chatAnalysis');
 
-            chatForm.addEventListener('submit', async function(e) {
+            form.addEventListener('submit', async function(e) {
                 e.preventDefault();
                 
-                const formData = new FormData(chatForm);
+                const formData = new FormData(form);
                 
-                if (!formData.get('chat_file')) {
-                    alert('채팅 기록 파일을 선택해주세요.');
-                    return;
-                }
-
-                loadingSpinner.style.display = 'block';
-                chatResults.style.display = 'none';
-                progressMessage.textContent = "채팅 파일을 읽는 중...";
-
                 try {
+                    loadingSpinner.style.display = 'block';
+                    resultSection.style.display = 'none';
+                    
                     const response = await fetch('/analyze_chat', {
                         method: 'POST',
                         body: formData
                     });
                     
-                    if (!response.ok) {
-                        throw new Error('서버 오류가 발생했습니다.');
-                    }
-
-                    progressMessage.textContent = "채팅 내용을 분석하는 중...";
                     const data = await response.json();
                     
-                    if (data.error) {
+                    if (data.status === 'error') {
                         throw new Error(data.error);
                     }
                     
-                    progressMessage.textContent = "분석 결과를 처리하는 중...";
-                    document.getElementById('chatAnalysis').innerHTML = formatChatAnalysis(data.analysis);
-                    chatResults.style.display = 'block';
+                    // 분석 결과 표시
+                    resultSection.innerHTML = formatChatAnalysis(data.result);
+                    resultSection.style.display = 'block';
                     
-                    progressMessage.textContent = "분석이 완료되었습니다!";
-                    setTimeout(() => {
-                        loadingSpinner.style.display = 'none';
-                    }, 1000);
                 } catch (error) {
-                    progressMessage.textContent = "오류가 발생했습니다";
                     alert('오류가 발생했습니다: ' + error.message);
+                } finally {
                     loadingSpinner.style.display = 'none';
                 }
             });
