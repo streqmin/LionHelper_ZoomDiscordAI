@@ -1,35 +1,41 @@
 services:
   - type: web
-    name: vtt-analysis-app
+    name: zoom-discord-ai
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn -c gunicorn_config.py app.app:app
+    startCommand: gunicorn app.app:app
     envVars:
       - key: PYTHON_VERSION
-        value: 3.9.0
+        value: 3.9.18
       - key: ANTHROPIC_API_KEY
         sync: false
-      - key: REDIS_URL
+      - key: DISCORD_WEBHOOK_URL
         sync: false
-      - key: PORT
-        value: 10000
-      - key: WEB_CONCURRENCY
-        value: 4
+      - key: REDIS_URL
+        fromService:
+          name: redis
+          type: redis
+          property: connectionString
 
   - type: redis
-    name: vtt-analysis-redis
+    name: redis
     ipAllowList: []
     plan: free
 
   - type: worker
-    name: vtt-analysis-worker
+    name: celery-worker
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: celery -A app.tasks worker --loglevel=info
     envVars:
       - key: PYTHON_VERSION
-        value: 3.9.0
+        value: 3.9.18
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: DISCORD_WEBHOOK_URL
+        sync: false
       - key: REDIS_URL
-        sync: false 
+        fromService:
+          name: redis
+          type: redis
+          property: connectionString 
