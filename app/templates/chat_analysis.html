@@ -269,13 +269,13 @@
                 loadingSpinner.style.display = 'block';
                 chatResults.style.display = 'none';
                 progressMessage.textContent = "채팅 파일을 읽는 중...";
-                
+
                 try {
                     const response = await fetch('/analyze_chat', {
                         method: 'POST',
                         body: formData
                     });
-
+                    
                     if (!response.ok) {
                         throw new Error('서버 오류가 발생했습니다.');
                     }
@@ -286,7 +286,7 @@
                     if (data.error) {
                         throw new Error(data.error);
                     }
-
+                    
                     progressMessage.textContent = "분석 결과를 처리하는 중...";
                     document.getElementById('chatAnalysis').innerHTML = formatChatAnalysis(data.analysis);
                     chatResults.style.display = 'block';

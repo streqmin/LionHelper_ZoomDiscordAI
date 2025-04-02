@@ -1,8 +1,8 @@
 import os
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, render_template
 from werkzeug.utils import secure_filename
 from app.config import Config
-from app.tasks import celery, analyze_vtt_task
+from app.tasks import celery, analyze_vtt_task, analyze_chat_task
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -13,12 +13,24 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
-@app.route('/analyze', methods=['POST'])
-def analyze():
-    if 'file' not in request.files:
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/vtt_analysis')
+def vtt_analysis():
+    return render_template('vtt_analysis.html')
+
+@app.route('/chat_analysis')
+def chat_analysis():
+    return render_template('chat_analysis.html')
+
+@app.route('/analyze_vtt', methods=['POST'])
+def analyze_vtt():
+    if 'vtt_file' not in request.files:
         return jsonify({'error': '파일이 없습니다.'}), 400
     
-    file = request.files['file']
+    file = request.files['vtt_file']
     if file.filename == '':
         return jsonify({'error': '선택된 파일이 없습니다.'}), 400
     
@@ -37,9 +49,33 @@ def analyze():
     
     return jsonify({'error': '허용되지 않는 파일 형식입니다.'}), 400
 
+@app.route('/analyze_chat', methods=['POST'])
+def analyze_chat():
+    if 'chat_file' not in request.files:
+        return jsonify({'error': '파일이 없습니다.'}), 400
+    
+    file = request.files['chat_file']
+    if file.filename == '':
+        return jsonify({'error': '선택된 파일이 없습니다.'}), 400
+    
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(file_path)
+        
+        # 비동기 분석 작업 시작
+        task = analyze_chat_task.delay(file_path)
+        
+        return jsonify({
+            'message': '분석이 시작되었습니다.',
+            'task_id': task.id
+        })
+    
+    return jsonify({'error': '허용되지 않는 파일 형식입니다.'}), 400
+
 @app.route('/status/<task_id>')
 def get_status(task_id):
-    task = analyze_vtt_task.AsyncResult(task_id)
+    task = celery.AsyncResult(task_id)
     if task.state == 'PENDING':
         response = {
             'state': task.state,

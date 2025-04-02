@@ -10,6 +10,8 @@ import pandas as pd
 import traceback
 from dotenv import load_dotenv
 import time
+import re
+from collections import Counter
 
 # 환경 변수 로드
 load_dotenv()
@@ -245,5 +247,96 @@ def analyze_curriculum_match(vtt_content, topics):
         
     except Exception as e:
         print(f"매칭 분석 중 오류 발생: {str(e)}")
+        print(traceback.format_exc())
+        return None 
+
+@celery.task
+def analyze_chat_task(file_path):
+    """채팅 로그 파일을 분석하는 태스크"""
+    try:
+        print(f"채팅 로그 분석 시작: {file_path}")
+        
+        # 파일 읽기
+        with open(file_path, 'r', encoding='utf-8') as f:
+            chat_content = f.read()
+        
+        # 채팅 내용 분석
+        analysis_result = analyze_chat_content(chat_content)
+        
+        # 결과 저장
+        result_file = file_path.replace('.txt', '_analysis.json')
+        with open(result_file, 'w', encoding='utf-8') as f:
+            json.dump(analysis_result, f, ensure_ascii=False, indent=2)
+        
+        return {
+            'status': 'success',
+            'message': '채팅 분석이 완료되었습니다.',
+            'result_file': os.path.basename(result_file),
+            'timestamp': datetime.now().isoformat()
+        }
+    except Exception as e:
+        print(f"채팅 분석 중 오류 발생: {str(e)}")
+        print(traceback.format_exc())
+        return {
+            'status': 'error',
+            'message': str(e),
+            'timestamp': datetime.now().isoformat()
+        }
+
+def analyze_chat_content(chat_content):
+    """채팅 내용을 분석하여 통계와 인사이트를 추출합니다."""
+    try:
+        # 채팅 메시지 파싱
+        messages = []
+        for line in chat_content.split('\n'):
+            if line.strip():
+                # 시간과 사용자 이름 추출 (예: "[10:30] 사용자명: 메시지")
+                match = re.match(r'\[(.*?)\] (.*?): (.*)', line)
+                if match:
+                    time_str, username, message = match.groups()
+                    messages.append({
+                        'time': time_str,
+                        'username': username,
+                        'message': message
+                    })
+        
+        # 기본 통계
+        total_messages = len(messages)
+        unique_users = len(set(msg['username'] for msg in messages))
+        
+        # 사용자별 메시지 수
+        user_message_counts = {}
+        for msg in messages:
+            username = msg['username']
+            user_message_counts[username] = user_message_counts.get(username, 0) + 1
+        
+        # 시간대별 메시지 수
+        time_message_counts = {}
+        for msg in messages:
+            hour = msg['time'].split(':')[0]
+            time_message_counts[hour] = time_message_counts.get(hour, 0) + 1
+        
+        # 키워드 분석
+        all_messages = ' '.join(msg['message'] for msg in messages)
+        words = re.findall(r'\w+', all_messages.lower())
+        word_counts = Counter(words)
+        common_words = word_counts.most_common(10)
+        
+        return {
+            'summary': {
+                'total_messages': total_messages,
+                'unique_users': unique_users,
+                'average_messages_per_user': total_messages / unique_users if unique_users > 0 else 0
+            },
+            'participation': {
+                'user_message_counts': user_message_counts,
+                'time_message_counts': time_message_counts
+            },
+            'keywords': {
+                'common_words': common_words
+            }
+        }
+    except Exception as e:
+        print(f"채팅 내용 분석 중 오류 발생: {str(e)}")
         print(traceback.format_exc())
         return None 
