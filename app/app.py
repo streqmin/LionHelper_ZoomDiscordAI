@@ -2,7 +2,7 @@ import os
 from flask import Flask, request, jsonify, send_file, render_template
 from werkzeug.utils import secure_filename
 from app.config import Config
-from anthropic import Anthropic
+from anthropic import Anthropic, CLAUDE_3_SONNET
 from datetime import datetime
 import json
 
@@ -10,7 +10,7 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 # Anthropic 클라이언트 초기화
-client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+client = Anthropic()
 
 # 업로드 폴더 생성
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -50,42 +50,45 @@ def analyze_vtt():
                 content = f.read()
             
             # Claude API 호출
-            message = client.messages.create(
-                model="claude-3-sonnet-20240229",
-                max_tokens=4000,
-                temperature=0.7,
-                system="""당신은 줌 회의록 분석 전문가입니다. 
-                주어진 VTT 파일의 내용을 분석하여 다음 형식으로 요약해주세요:
-                
-                # 회의 요약
-                - 회의 주제:
-                - 주요 참석자:
-                - 회의 시간:
-                - 핵심 논의 사항:
-                - 결정사항:
-                - 후속 조치사항:
-                
-                # 상세 내용
-                [시간대별 주요 내용]
-                
-                # 주요 키워드
-                [회의에서 언급된 주요 키워드들]
-                
-                # 액션 아이템
-                [구체적인 할 일과 담당자]
-                
-                # 추가 참고사항
-                [기타 중요한 정보나 맥락]""",
+            response = client.beta.messages.create(
+                model=CLAUDE_3_SONNET,
+                system="당신은 줌 회의록 분석 전문가입니다. 주어진 VTT 파일의 내용을 분석하여 다음 형식으로 요약해주세요.",
                 messages=[{
                     "role": "user",
-                    "content": content
-                }]
+                    "content": f"""다음 VTT 파일을 분석해주세요:
+
+{content}
+
+다음 형식으로 분석 결과를 제공해주세요:
+
+# 회의 요약
+- 회의 주제:
+- 주요 참석자:
+- 회의 시간:
+- 핵심 논의 사항:
+- 결정사항:
+- 후속 조치사항:
+
+# 상세 내용
+[시간대별 주요 내용]
+
+# 주요 키워드
+[회의에서 언급된 주요 키워드들]
+
+# 액션 아이템
+[구체적인 할 일과 담당자]
+
+# 추가 참고사항
+[기타 중요한 정보나 맥락]"""
+                }],
+                max_tokens=4000,
+                temperature=0.7
             )
             
             # 분석 결과
             result = {
                 'status': 'success',
-                'result': message.content[0].text,
+                'result': response.content[0].text,
                 'timestamp': datetime.now().isoformat()
             }
             
@@ -124,38 +127,41 @@ def analyze_chat():
                 content = f.read()
             
             # Claude API 호출
-            message = client.messages.create(
-                model="claude-3-sonnet-20240229",
-                max_tokens=4000,
-                temperature=0.7,
-                system="""당신은 채팅 로그 분석 전문가입니다.
-                주어진 채팅 로그를 분석하여 다음 형식으로 요약해주세요:
-                
-                # 채팅 요약
-                - 대화 주제:
-                - 주요 참여자:
-                - 핵심 논의 사항:
-                - 결정사항:
-                - 후속 조치사항:
-                
-                # 주요 키워드
-                [대화에서 언급된 주요 키워드들]
-                
-                # 감정/태도 분석
-                [대화의 전반적인 톤과 참여자들의 태도]
-                
-                # 추가 참고사항
-                [기타 중요한 정보나 맥락]""",
+            response = client.beta.messages.create(
+                model=CLAUDE_3_SONNET,
+                system="당신은 채팅 로그 분석 전문가입니다. 주어진 채팅 로그를 분석하여 다음 형식으로 요약해주세요.",
                 messages=[{
                     "role": "user",
-                    "content": content
-                }]
+                    "content": f"""다음 채팅 로그를 분석해주세요:
+
+{content}
+
+다음 형식으로 분석 결과를 제공해주세요:
+
+# 채팅 요약
+- 대화 주제:
+- 주요 참여자:
+- 핵심 논의 사항:
+- 결정사항:
+- 후속 조치사항:
+
+# 주요 키워드
+[대화에서 언급된 주요 키워드들]
+
+# 감정/태도 분석
+[대화의 전반적인 톤과 참여자들의 태도]
+
+# 추가 참고사항
+[기타 중요한 정보나 맥락]"""
+                }],
+                max_tokens=4000,
+                temperature=0.7
             )
             
             # 분석 결과
             result = {
                 'status': 'success',
-                'result': message.content[0].text,
+                'result': response.content[0].text,
                 'timestamp': datetime.now().isoformat()
             }
             
