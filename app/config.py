@@ -17,21 +17,4 @@ class Config:
     ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
     
     # Discord Webhook 설정
-    DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL')
-    
-    # Celery 설정
-    CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-    CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-    CELERY_TASK_SERIALIZER = 'json'
-    CELERY_RESULT_SERIALIZER = 'json'
-    CELERY_ACCEPT_CONTENT = ['json']
-    CELERY_TIMEZONE = 'Asia/Seoul'
-    CELERY_ENABLE_UTC = True
-    
-    # Celery Beat 스케줄 설정
-    CELERY_BEAT_SCHEDULE = {
-        'cleanup-old-files': {
-            'task': 'app.tasks.cleanup_old_files',
-            'schedule': crontab(hour=0, minute=0)  # 매일 자정에 실행
-        }
-    } 
+    DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL') 
