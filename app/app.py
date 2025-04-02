@@ -5,12 +5,23 @@ from app.config import Config
 from anthropic import Anthropic
 from datetime import datetime
 import json
+import logging
+
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config.from_object(Config)
 
 # Anthropic 클라이언트 초기화
-client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+api_key = os.getenv('ANTHROPIC_API_KEY')
+if not api_key:
+    logger.error("ANTHROPIC_API_KEY not found in environment variables")
+    raise ValueError("ANTHROPIC_API_KEY is required")
+
+client = Anthropic(api_key=api_key)
+logger.info("Anthropic client initialized successfully")
 
 # 업로드 폴더 생성
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -49,16 +60,25 @@ def analyze_vtt():
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
+            logger.info("Starting VTT analysis with Claude API")
             # Claude API 호출
             prompt = f"\n\nHuman: 당신은 줌 회의록 분석 전문가입니다. 다음 VTT 파일을 분석해주세요:\n\n{content}\n\n다음 형식으로 분석 결과를 제공해주세요:\n\n# 회의 요약\n- 회의 주제:\n- 주요 참석자:\n- 회의 시간:\n- 핵심 논의 사항:\n- 결정사항:\n- 후속 조치사항:\n\n# 상세 내용\n[시간대별 주요 내용]\n\n# 주요 키워드\n[회의에서 언급된 주요 키워드들]\n\n# 액션 아이템\n[구체적인 할 일과 담당자]\n\n# 추가 참고사항\n[기타 중요한 정보나 맥락]\n\nAssistant:"
             
-            completion = client.completions.create(
-                prompt=prompt,
-                model="claude-2.1",
-                max_tokens_to_sample=4000,
-                stop_sequences=["\n\nHuman:"],
-                temperature=0.7
-            )
+            try:
+                completion = client.completions.create(
+                    prompt=prompt,
+                    model="claude-2.1",
+                    max_tokens_to_sample=4000,
+                    stop_sequences=["\n\nHuman:"],
+                    temperature=0.7
+                )
+                logger.info("Claude API call successful")
+            except Exception as api_error:
+                logger.error(f"Claude API error: {str(api_error)}")
+                return jsonify({
+                    'status': 'error',
+                    'error': f"API 호출 중 오류 발생: {str(api_error)}"
+                }), 500
             
             # 분석 결과
             result = {
@@ -75,9 +95,10 @@ def analyze_vtt():
             return jsonify(result)
             
         except Exception as e:
+            logger.error(f"General error: {str(e)}")
             return jsonify({
                 'status': 'error',
-                'error': str(e)
+                'error': f"처리 중 오류 발생: {str(e)}"
             }), 500
     
     return jsonify({'error': '허용되지 않는 파일 형식입니다.'}), 400
@@ -101,16 +122,25 @@ def analyze_chat():
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
+            logger.info("Starting chat analysis with Claude API")
             # Claude API 호출
             prompt = f"\n\nHuman: 당신은 채팅 로그 분석 전문가입니다. 다음 채팅 로그를 분석해주세요:\n\n{content}\n\n다음 형식으로 분석 결과를 제공해주세요:\n\n# 채팅 요약\n- 대화 주제:\n- 주요 참여자:\n- 핵심 논의 사항:\n- 결정사항:\n- 후속 조치사항:\n\n# 주요 키워드\n[대화에서 언급된 주요 키워드들]\n\n# 감정/태도 분석\n[대화의 전반적인 톤과 참여자들의 태도]\n\n# 추가 참고사항\n[기타 중요한 정보나 맥락]\n\nAssistant:"
             
-            completion = client.completions.create(
-                prompt=prompt,
-                model="claude-2.1",
-                max_tokens_to_sample=4000,
-                stop_sequences=["\n\nHuman:"],
-                temperature=0.7
-            )
+            try:
+                completion = client.completions.create(
+                    prompt=prompt,
+                    model="claude-2.1",
+                    max_tokens_to_sample=4000,
+                    stop_sequences=["\n\nHuman:"],
+                    temperature=0.7
+                )
+                logger.info("Claude API call successful")
+            except Exception as api_error:
+                logger.error(f"Claude API error: {str(api_error)}")
+                return jsonify({
+                    'status': 'error',
+                    'error': f"API 호출 중 오류 발생: {str(api_error)}"
+                }), 500
             
             # 분석 결과
             result = {
@@ -127,9 +157,10 @@ def analyze_chat():
             return jsonify(result)
             
         except Exception as e:
+            logger.error(f"General error: {str(e)}")
             return jsonify({
                 'status': 'error',
-                'error': str(e)
+                'error': f"처리 중 오류 발생: {str(e)}"
             }), 500
     
     return jsonify({'error': '허용되지 않는 파일 형식입니다.'}), 400
