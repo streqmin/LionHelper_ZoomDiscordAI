@@ -7,7 +7,12 @@ from datetime import datetime
 import json
 import logging
 import time
+import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
+import socket
+
+# 글로벌 타임아웃 설정
+socket.setdefaulttimeout(60)
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -22,10 +27,17 @@ if not api_key:
     logger.error("ANTHROPIC_API_KEY not found in environment variables")
     raise ValueError("ANTHROPIC_API_KEY is required")
 
+# httpx 클라이언트 설정
+http_client = httpx.Client(
+    timeout=httpx.Timeout(60.0, connect=30.0),
+    limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+    verify=True
+)
+
 # 클라이언트 설정
 client = Anthropic(
     api_key=api_key,
-    timeout=30  # 30초 타임아웃 설정
+    http_client=http_client
 )
 logger.info("Anthropic client initialized successfully")
 
@@ -33,8 +45,8 @@ logger.info("Anthropic client initialized successfully")
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 @retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10)
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=10, max=30)
 )
 def call_claude_api(prompt):
     """Claude API 호출 함수 with 재시도 로직"""
@@ -49,6 +61,8 @@ def call_claude_api(prompt):
         return completion
     except Exception as e:
         logger.error(f"API call failed: {str(e)}")
+        if isinstance(e, httpx.ConnectError):
+            logger.error("Connection error occurred. Checking network connectivity...")
         raise
 
 def allowed_file(filename):
