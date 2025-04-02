@@ -13,14 +13,23 @@ import re
 from io import StringIO, BytesIO
 import sys
 from app.tasks import analyze_vtt_task, client
+from app.config import Config
+from werkzeug.utils import secure_filename
 
 # 환경 변수 로드
 load_dotenv()
 
 app = Flask(__name__)
+app.config.from_object(Config)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 sys.setrecursionlimit(10000)  # 재귀 깊이 제한 증가
+
+# 업로드 폴더 생성
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 def split_text(text, max_chunk_size=8000):
     """텍스트를 더 큰 청크로 나눕니다."""
@@ -475,65 +484,56 @@ def vtt_analysis():
 def chat_analysis():
     return render_template('chat_analysis.html')
 
-@app.route('/analyze_vtt', methods=['POST'])
-def analyze_vtt():
-    try:
-        if 'vtt_file' not in request.files or 'curriculum_file' not in request.files:
-            return jsonify({'error': 'VTT 파일과 커리큘럼 파일이 모두 필요합니다.'}), 400
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    if 'file' not in request.files:
+        return jsonify({'error': '파일이 없습니다.'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': '선택된 파일이 없습니다.'}), 400
+    
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(file_path)
         
-        vtt_file = request.files['vtt_file']
-        curriculum_file = request.files['curriculum_file']
-        
-        if vtt_file.filename == '' or curriculum_file.filename == '':
-            return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
-            
-        # 파일 내용 읽기
-            vtt_content = vtt_file.read().decode('utf-8')
-        curriculum_content = curriculum_file.read().decode('utf-8')
-        
-        # Celery 작업 시작
-        task = analyze_vtt_task.delay(vtt_content, curriculum_content)
+        # 비동기 분석 작업 시작
+        task = analyze_vtt_task.delay(file_path)
         
         return jsonify({
-            'task_id': task.id,
-            'status': 'started',
-            'message': '분석이 시작되었습니다.'
+            'message': '분석이 시작되었습니다.',
+            'task_id': task.id
         })
-        
-    except Exception as e:
-        print(f"분석 중 오류 발생: {str(e)}")
-        print(traceback.format_exc())
-        return jsonify({'error': str(e)}), 500
+    
+    return jsonify({'error': '허용되지 않는 파일 형식입니다.'}), 400
 
-@app.route('/task_status/<task_id>')
-def get_task_status(task_id):
+@app.route('/status/<task_id>')
+def get_status(task_id):
     task = analyze_vtt_task.AsyncResult(task_id)
     if task.state == 'PENDING':
         response = {
             'state': task.state,
-            'status': '분석이 시작되기를 기다리는 중...',
-            'progress': 0
-        }
-    elif task.state == 'PROGRESS':
-        response = {
-            'state': task.state,
-            'status': f'분석 중... ({task.info.get("step", "")})',
-            'progress': task.info.get('progress', 0)
+            'status': '작업이 대기 중입니다...'
         }
     elif task.state == 'SUCCESS':
         response = {
             'state': task.state,
-            'status': '분석이 완료되었습니다.',
-            'progress': 100,
             'result': task.result
         }
     else:
         response = {
             'state': task.state,
-            'status': f'오류 발생: {task.info.get("error", "알 수 없는 오류")}',
-            'progress': 0
+            'error': str(task.result)
         }
     return jsonify(response)
+
+@app.route('/result/<filename>')
+def get_result(filename):
+    result_file = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if os.path.exists(result_file):
+        return send_file(result_file, as_attachment=True)
+    return jsonify({'error': '결과 파일을 찾을 수 없습니다.'}), 404
 
 @app.route('/analyze_chat', methods=['POST'])
 def analyze_chat():

@@ -8,6 +8,9 @@ import traceback
 import os
 from dotenv import load_dotenv
 from anthropic import Anthropic
+from app.config import Config
+import time
+from datetime import datetime, timedelta
 
 # 환경 변수 로드
 load_dotenv()
@@ -16,8 +19,8 @@ load_dotenv()
 client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
 # Celery 인스턴스 생성
-celery = Celery('tasks')
-celery.config_from_object('app.celery_config')
+celery = Celery('app')
+celery.conf.update(Config.__dict__)
 
 # Flask 애플리케이션 컨텍스트 설정
 celery.conf.update(app.config)
@@ -29,41 +32,86 @@ class ContextTask(celery.Task):
 
 celery.Task = ContextTask
 
-@celery.task(bind=True)
-def analyze_vtt_task(self, vtt_content, curriculum_content):
-    """VTT 분석 작업을 수행하는 Celery 태스크"""
+@celery.task
+def analyze_vtt_task(file_path):
     try:
-        # 1. VTT 파일 분석
-        analyzed_content = analyze_vtt_content(vtt_content)
-        self.update_state(state='PROGRESS', meta={'step': 'vtt_analysis', 'progress': 20})
+        # 파일 읽기
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
         
-        # 2. 커리큘럼 주제 추출
-        topics = extract_curriculum_topics(curriculum_content)
-        if not topics:
-            raise ValueError("커리큘럼 분석에 실패했습니다.")
-        self.update_state(state='PROGRESS', meta={'step': 'curriculum_analysis', 'progress': 40})
+        # Claude API 호출
+        message = client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=4000,
+            temperature=0.7,
+            system="""당신은 줌 회의록 분석 전문가입니다. 
+            주어진 VTT 파일의 내용을 분석하여 다음 형식으로 요약해주세요:
+            
+            # 회의 요약
+            - 회의 주제:
+            - 주요 참석자:
+            - 회의 시간:
+            - 핵심 논의 사항:
+            - 결정사항:
+            - 후속 조치사항:
+            
+            # 상세 내용
+            [시간대별 주요 내용]
+            
+            # 주요 키워드
+            [회의에서 언급된 주요 키워드들]
+            
+            # 액션 아이템
+            [구체적인 할 일과 담당자]
+            
+            # 추가 참고사항
+            [기타 중요한 정보나 맥락]""",
+            messages=[{
+                "role": "user",
+                "content": content
+            }]
+        )
         
-        # 3. 매칭 분석
-        match_analysis = analyze_curriculum_match(analyzed_content, topics)
-        if not match_analysis:
-            raise ValueError("매칭 분석에 실패했습니다.")
-        self.update_state(state='PROGRESS', meta={'step': 'matching_analysis', 'progress': 80})
-        
-        # 4. 결과 생성
+        # 분석 결과 저장
         result = {
-            'vtt_content': analyzed_content,
-            'curriculum_analysis': topics,
-            'match_analysis': match_analysis
+            'status': 'success',
+            'summary': message.content[0].text,
+            'timestamp': datetime.now().isoformat()
         }
-        self.update_state(state='SUCCESS', meta={'step': 'complete', 'progress': 100})
+        
+        # 결과를 JSON 파일로 저장
+        result_file = file_path.replace('.vtt', '_analysis.json')
+        with open(result_file, 'w', encoding='utf-8') as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
         
         return result
         
     except Exception as e:
-        print(f"분석 중 오류 발생: {str(e)}")
-        print(traceback.format_exc())
-        self.update_state(state='FAILURE', meta={'error': str(e)})
-        raise
+        return {
+            'status': 'error',
+            'message': str(e),
+            'timestamp': datetime.now().isoformat()
+        }
+
+@celery.task
+def cleanup_old_files():
+    """오래된 파일들을 정리하는 태스크"""
+    try:
+        upload_dir = Config.UPLOAD_FOLDER
+        max_age = timedelta(hours=Config.MAX_AGE_HOURS)
+        current_time = datetime.now()
+        
+        for filename in os.listdir(upload_dir):
+            file_path = os.path.join(upload_dir, filename)
+            if os.path.isfile(file_path):
+                file_age = datetime.fromtimestamp(os.path.getmtime(file_path))
+                if current_time - file_age > max_age:
+                    os.remove(file_path)
+                    print(f"Deleted old file: {filename}")
+        
+        return {'status': 'success', 'message': 'Cleanup completed'}
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}
 
 def analyze_vtt_content(vtt_content):
     """VTT 파일 내용을 분석하여 텍스트를 추출합니다."""
