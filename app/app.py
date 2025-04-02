@@ -13,97 +13,17 @@ import re
 from io import StringIO, BytesIO
 import sys
 from app.tasks import analyze_vtt_task, client
-from anthropic import Anthropic
 
 # 환경 변수 로드
 load_dotenv()
-
-# Anthropic 클라이언트 초기화
-client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 sys.setrecursionlimit(10000)  # 재귀 깊이 제한 증가
 
-class AnthropicAPI:
-    def __init__(self, api_key):
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable is not set")
-        
-        self.api_key = api_key
-        self.base_url = "https://api.anthropic.com/v1"
-        self.headers = {
-            "anthropic-version": "2023-06-01",
-            "x-api-key": api_key,
-            "content-type": "application/json"
-        }
-
-    def create_completion(self, prompt, model="claude-3-haiku-20240307", max_tokens=4096, temperature=0.7):
-        try:
-            # 프롬프트에서 Human/Assistant 부분 추출
-            parts = prompt.split("\n\nHuman: ")
-            if len(parts) > 1:
-                system_prompt = parts[0].strip()
-                user_message = parts[1].split("\n\nAssistant:")[0].strip()
-            else:
-                system_prompt = ""
-                user_message = prompt.strip()
-
-            messages = []
-            if system_prompt:
-                messages.append({
-                    "role": "system",
-                    "content": system_prompt
-                })
-            
-            messages.append({
-                "role": "user",
-                "content": user_message
-            })
-
-            response = requests.post(
-                f"{self.base_url}/messages",
-                headers=self.headers,
-                json={
-                    "messages": messages,
-                    "model": model,
-                    "max_tokens": max_tokens,
-                    "temperature": temperature
-                }
-            )
-            
-            # HTTP 오류 체크
-            response.raise_for_status()
-            
-            # 응답 파싱
-            result = response.json()
-            if "content" not in result or len(result["content"]) == 0:
-                print(f"예상치 못한 API 응답 형식: {result}")
-                return None
-                
-            return result["content"][0]["text"]
-            
-        except requests.exceptions.RequestException as e:
-            print(f"API 요청 중 오류 발생: {str(e)}")
-            if response := getattr(e, 'response', None):
-                print(f"응답 상태 코드: {response.status_code}")
-                print(f"응답 내용: {response.text}")
-            return None
-        except json.JSONDecodeError as e:
-            print(f"JSON 파싱 오류: {str(e)}")
-            return None
-        except Exception as e:
-            print(f"예상치 못한 오류 발생: {str(e)}")
-            return None
-
-# Anthropic API 클라이언트 초기화
-anthropic_api_key = os.getenv('ANTHROPIC_API_KEY')
-client = AnthropicAPI(anthropic_api_key)
-
 def split_text(text, max_chunk_size=8000):
     """텍스트를 더 큰 청크로 나눕니다."""
-    # 문장 단위로 분할
     sentences = re.split(r'(?<=[.!?])\s+', text)
     chunks = []
     current_chunk = []
@@ -114,8 +34,8 @@ def split_text(text, max_chunk_size=8000):
         if current_size + sentence_size > max_chunk_size:
             if current_chunk:
                 chunks.append(' '.join(current_chunk))
-            current_chunk = [sentence]
-            current_size = sentence_size
+                current_chunk = [sentence]
+                current_size = sentence_size
         else:
             current_chunk.append(sentence)
             current_size += sentence_size
@@ -126,30 +46,37 @@ def split_text(text, max_chunk_size=8000):
     return chunks
 
 def analyze_text_chunk(chunk):
+    """텍스트 청크를 분석합니다."""
     try:
         system_prompt = """다음 강의 내용을 분석하여 아래 형식으로 정리해주세요:
 
-1. 강의 내용 요약
+    1. 강의 내용 요약
 - 핵심 주제와 개념을 간단히 정리
 - 중요한 설명이나 예시 포함
 
-2. 강의에서 어려웠던 점
+    2. 강의에서 어려웠던 점
 - 설명이 불충분하거나 복잡한 내용
 - 이해하기 어려운 개념이나 용어
 
-3. 강사의 발언 중 위험한 표현
+    3. 강사의 발언 중 위험한 표현
 - 부적절하거나 오해의 소지가 있는 표현
 - 수정이 필요한 설명이나 예시
 
 각 섹션은 bullet point(•)로 작성하고, 중요한 내용만 간단히 정리해주세요."""
 
-        prompt = f"\n\nHuman: {system_prompt}\n\n강의 내용:\n{chunk}\n\nAssistant:"
-        response = client.create_completion(prompt=prompt)
+        response = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=1000,
+            temperature=0.7,
+            messages=[
+                {"role": "user", "content": f"{system_prompt}\n\n강의 내용:\n{chunk}"}
+            ]
+        )
         
         if response is None:
             return "분석 결과를 가져올 수 없습니다."
             
-        return response
+        return response.content[0].text
 
     except Exception as e:
         print(f"텍스트 분석 중 오류 발생: {str(e)}")
@@ -347,17 +274,19 @@ def analyze_curriculum_match(vtt_content, topics):
         """
         
         try:
-            summary_response = client.create_completion(
+            summary_response = client.messages.create(
                 model="claude-3-haiku-20240307",
                 max_tokens=1000,
                 temperature=0.7,
-                prompt=f"\n\nHuman: {summary_prompt}\n\nAssistant:"
+                messages=[
+                    {"role": "user", "content": summary_prompt}
+                ]
             )
             
             if summary_response is None:
                 summary = "강의 내용 분석 결과를 생성할 수 없습니다."
             else:
-                summary = summary_response.strip()
+                summary = summary_response.content[0].text
         except Exception as e:
             print(f"종합 결과 생성 중 오류 발생: {str(e)}")
             summary = "강의 내용 분석 결과를 생성할 수 없습니다."
@@ -508,13 +437,10 @@ def analyze_chat_log(chat_content):
         5. 보안 및 개인정보 보호 관점 고려
         """
         
-        print("채팅 분석 시작...")
-        
-        # API 요청
+        # API 요청 형식 수정
         response = client.messages.create(
             model="claude-3-haiku-20240307",
             max_tokens=4096,
-            temperature=0.7,
             messages=[
                 {
                     "role": "system",
@@ -527,28 +453,15 @@ def analyze_chat_log(chat_content):
             ]
         )
         
-        print("API 응답 수신 완료")
-        
-        if not response:
-            print("API 응답이 비어있습니다.")
-            return None
+        if not response or not response.content:
+            return "채팅 분석 결과를 가져올 수 없습니다."
             
-        if not response.content:
-            print("API 응답에 content가 없습니다.")
-            return None
-            
-        analysis_result = response.content
-        if not analysis_result:
-            print("분석 결과가 비어있습니다.")
-            return None
-            
-        print("채팅 분석 완료")
-        return analysis_result
+        return response.content[0].text
         
     except Exception as e:
         print(f"채팅 분석 중 오류 발생: {str(e)}")
         print(traceback.format_exc())
-        return None
+        return "채팅 분석 중 오류가 발생했습니다."
 
 @app.route('/')
 def index():
@@ -567,7 +480,7 @@ def analyze_vtt():
     try:
         if 'vtt_file' not in request.files or 'curriculum_file' not in request.files:
             return jsonify({'error': 'VTT 파일과 커리큘럼 파일이 모두 필요합니다.'}), 400
-            
+        
         vtt_file = request.files['vtt_file']
         curriculum_file = request.files['curriculum_file']
         
@@ -575,7 +488,7 @@ def analyze_vtt():
             return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
             
         # 파일 내용 읽기
-        vtt_content = vtt_file.read().decode('utf-8')
+            vtt_content = vtt_file.read().decode('utf-8')
         curriculum_content = curriculum_file.read().decode('utf-8')
         
         # Celery 작업 시작
@@ -627,34 +540,31 @@ def analyze_chat():
     try:
         if 'chat_file' not in request.files:
             return jsonify({'error': '파일이 업로드되지 않았습니다.'}), 400
-            
+        
         file = request.files['chat_file']
         if file.filename == '':
             return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
             
         # 파일 내용을 메모리에 저장
-        try:
-            chat_content = file.read().decode('utf-8')
-        except UnicodeDecodeError:
-            return jsonify({'error': '파일 인코딩이 올바르지 않습니다. UTF-8 형식의 파일을 업로드해주세요.'}), 400
-            
+        chat_content = file.read().decode('utf-8')
+        
         if not chat_content.strip():
             return jsonify({'error': '파일이 비어있습니다.'}), 400
             
         # 채팅 내용 분석
-        print("채팅 분석 시작")
         analysis_result = analyze_chat_log(chat_content)
         
-        if analysis_result is None:
-            return jsonify({'error': '채팅 분석에 실패했습니다. 다시 시도해주세요.'}), 500
+        if not analysis_result:
+            return jsonify({'error': '분석 결과를 생성할 수 없습니다.'}), 500
             
-        print("채팅 분석 완료")
         return jsonify({'analysis': analysis_result})
         
+    except UnicodeDecodeError:
+        return jsonify({'error': '파일 인코딩이 올바르지 않습니다. UTF-8 형식의 파일을 업로드해주세요.'}), 400
     except Exception as e:
         print(f"채팅 분석 요청 처리 중 오류 발생: {str(e)}")
         print(traceback.format_exc())
-        return jsonify({'error': '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'}), 500
+        return jsonify({'error': f'서버 오류가 발생했습니다: {str(e)}'}), 500
 
 @app.errorhandler(500)
 def internal_error(error):
