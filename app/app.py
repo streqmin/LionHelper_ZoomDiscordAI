@@ -533,11 +533,11 @@ def analyze_chat_log(chat_content):
             print("API 응답이 비어있습니다.")
             return None
             
-        if not response.content or len(response.content) == 0:
+        if not response.content:
             print("API 응답에 content가 없습니다.")
             return None
             
-        analysis_result = response.content[0].text
+        analysis_result = response.content
         if not analysis_result:
             print("분석 결과가 비어있습니다.")
             return None
