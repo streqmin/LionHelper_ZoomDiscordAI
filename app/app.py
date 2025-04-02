@@ -2,7 +2,7 @@ import os
 from flask import Flask, request, jsonify, send_file, render_template
 from werkzeug.utils import secure_filename
 from app.config import Config
-from anthropic import Anthropic, CLAUDE_3_SONNET
+from anthropic import Anthropic
 from datetime import datetime
 import json
 
@@ -10,7 +10,7 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 # Anthropic 클라이언트 초기화
-client = Anthropic()
+client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
 # 업로드 폴더 생성
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -50,37 +50,9 @@ def analyze_vtt():
                 content = f.read()
             
             # Claude API 호출
-            response = client.beta.messages.create(
-                model=CLAUDE_3_SONNET,
-                system="당신은 줌 회의록 분석 전문가입니다. 주어진 VTT 파일의 내용을 분석하여 다음 형식으로 요약해주세요.",
-                messages=[{
-                    "role": "user",
-                    "content": f"""다음 VTT 파일을 분석해주세요:
-
-{content}
-
-다음 형식으로 분석 결과를 제공해주세요:
-
-# 회의 요약
-- 회의 주제:
-- 주요 참석자:
-- 회의 시간:
-- 핵심 논의 사항:
-- 결정사항:
-- 후속 조치사항:
-
-# 상세 내용
-[시간대별 주요 내용]
-
-# 주요 키워드
-[회의에서 언급된 주요 키워드들]
-
-# 액션 아이템
-[구체적인 할 일과 담당자]
-
-# 추가 참고사항
-[기타 중요한 정보나 맥락]"""
-                }],
+            completion = client.completions.create(
+                model="claude-2.1",
+                prompt=f"\n\nHuman: 당신은 줌 회의록 분석 전문가입니다. 다음 VTT 파일을 분석해주세요:\n\n{content}\n\n다음 형식으로 분석 결과를 제공해주세요:\n\n# 회의 요약\n- 회의 주제:\n- 주요 참석자:\n- 회의 시간:\n- 핵심 논의 사항:\n- 결정사항:\n- 후속 조치사항:\n\n# 상세 내용\n[시간대별 주요 내용]\n\n# 주요 키워드\n[회의에서 언급된 주요 키워드들]\n\n# 액션 아이템\n[구체적인 할 일과 담당자]\n\n# 추가 참고사항\n[기타 중요한 정보나 맥락]\n\nAssistant: ",
                 max_tokens=4000,
                 temperature=0.7
             )
@@ -88,7 +60,7 @@ def analyze_vtt():
             # 분석 결과
             result = {
                 'status': 'success',
-                'result': response.content[0].text,
+                'result': completion.completion,
                 'timestamp': datetime.now().isoformat()
             }
             
@@ -127,33 +99,9 @@ def analyze_chat():
                 content = f.read()
             
             # Claude API 호출
-            response = client.beta.messages.create(
-                model=CLAUDE_3_SONNET,
-                system="당신은 채팅 로그 분석 전문가입니다. 주어진 채팅 로그를 분석하여 다음 형식으로 요약해주세요.",
-                messages=[{
-                    "role": "user",
-                    "content": f"""다음 채팅 로그를 분석해주세요:
-
-{content}
-
-다음 형식으로 분석 결과를 제공해주세요:
-
-# 채팅 요약
-- 대화 주제:
-- 주요 참여자:
-- 핵심 논의 사항:
-- 결정사항:
-- 후속 조치사항:
-
-# 주요 키워드
-[대화에서 언급된 주요 키워드들]
-
-# 감정/태도 분석
-[대화의 전반적인 톤과 참여자들의 태도]
-
-# 추가 참고사항
-[기타 중요한 정보나 맥락]"""
-                }],
+            completion = client.completions.create(
+                model="claude-2.1",
+                prompt=f"\n\nHuman: 당신은 채팅 로그 분석 전문가입니다. 다음 채팅 로그를 분석해주세요:\n\n{content}\n\n다음 형식으로 분석 결과를 제공해주세요:\n\n# 채팅 요약\n- 대화 주제:\n- 주요 참여자:\n- 핵심 논의 사항:\n- 결정사항:\n- 후속 조치사항:\n\n# 주요 키워드\n[대화에서 언급된 주요 키워드들]\n\n# 감정/태도 분석\n[대화의 전반적인 톤과 참여자들의 태도]\n\n# 추가 참고사항\n[기타 중요한 정보나 맥락]\n\nAssistant: ",
                 max_tokens=4000,
                 temperature=0.7
             )
@@ -161,7 +109,7 @@ def analyze_chat():
             # 분석 결과
             result = {
                 'status': 'success',
-                'result': response.content[0].text,
+                'result': completion.completion,
                 'timestamp': datetime.now().isoformat()
             }
             
