@@ -171,6 +171,30 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
         }
     }
 
+def summarize_content(content_list, max_length=800):
+    """여러 내용을 하나로 통합하여 재요약"""
+    if not content_list:
+        return []
+        
+    # 모든 내용을 하나의 문자열로 결합
+    combined_content = "\n".join(content_list)
+    
+    try:
+        # GPT API를 통해 재요약
+        prompt = f"""다음 내용을 {max_length}자 이내로 통합하여 요약해주세요. 
+        중요한 내용을 놓치지 않되, 반복되는 내용은 제거하고 핵심적인 내용만 남겨주세요.
+        각 요점은 새로운 줄에 '- '로 시작하도록 해주세요.
+        
+        내용:
+        {combined_content}"""
+        
+        summarized = api_client.analyze_text(prompt, 'summarize')
+        # 결과를 리스트로 변환
+        return [line.strip()[2:] for line in summarized.split('\n') if line.strip().startswith('- ')]
+    except Exception as e:
+        logger.error(f"재요약 중 오류 발생: {str(e)}")
+        return content_list  # 오류 발생 시 원본 내용 반환
+
 def format_analysis_result(content):
     """분석 결과를 HTML 형식으로 변환"""
     logger.info(f"원본 분석 결과: {content}")
@@ -205,6 +229,10 @@ def format_analysis_result(content):
                 continue
             if line and current_category in categories:
                 categories[current_category].append(line)
+    
+    # 주요 내용과 분석 섹션 재요약
+    categories['주요 내용'] = summarize_content(categories['주요 내용'])
+    categories['분석'] = summarize_content(categories['분석'])
     
     # HTML 생성
     html_content = ['<div class="analysis-result">']
