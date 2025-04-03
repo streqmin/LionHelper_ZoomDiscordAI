@@ -41,11 +41,11 @@ if not api_key:
 # requests 세션 설정
 session = requests.Session()
 retry_strategy = Retry(
-    total=5,
-    backoff_factor=2,
+    total=3,  # 재시도 횟수 감소
+    backoff_factor=1,  # 백오프 팩터 감소
     status_forcelist=[429, 500, 502, 503, 504],
 )
-adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=3, pool_maxsize=10)
+adapter = HTTPAdapter(max_retries=retry_strategy)
 session.mount("http://", adapter)
 session.mount("https://", adapter)
 
@@ -74,51 +74,37 @@ def split_content(content, max_length=800):  # 청크 크기 축소
 
 def call_claude_api(prompt):
     """Claude API 직접 호출"""
-    max_retries = 3
-    base_wait_time = 10
-    
-    for attempt in range(max_retries):
-        try:
-            headers = {
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            }
+    try:
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        }
+        
+        data = {
+            "prompt": prompt,
+            "model": "claude-instant-1.2",
+            "max_tokens_to_sample": 1500,
+            "temperature": 0.7,
+            "stop_sequences": ["\n\nHuman:"]
+        }
+        
+        response = session.post(
+            "https://api.anthropic.com/v1/complete",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.error(f"API 응답 오류: {response.status_code} - {response.text}")
+            raise Exception(f"API 응답 오류: {response.status_code}")
             
-            data = {
-                "prompt": prompt,
-                "model": "claude-instant-1.2",
-                "max_tokens_to_sample": 1500,
-                "temperature": 0.7,
-                "stop_sequences": ["\n\nHuman:"]
-            }
-            
-            response = session.post(
-                "https://api.anthropic.com/v1/complete",
-                headers=headers,
-                json=data,
-                timeout=60
-            )
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error(f"API 응답 오류: {response.status_code} - {response.text}")
-                if attempt < max_retries - 1:
-                    wait_time = base_wait_time * (2 ** attempt)  # 지수 백오프
-                    time.sleep(wait_time)
-                    continue
-                raise Exception(f"API 응답 오류: {response.status_code}")
-                
-        except requests.exceptions.RequestException as e:
-            logger.error(f"API 호출 실패 (시도 {attempt + 1}/{max_retries}): {str(e)}")
-            if attempt < max_retries - 1:
-                wait_time = base_wait_time * (2 ** attempt)
-                time.sleep(wait_time)
-                continue
-            raise
-    
-    raise Exception("최대 재시도 횟수를 초과했습니다.")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"API 호출 실패: {str(e)}")
+        raise
 
 def analyze_content_in_chunks(content, analysis_type='vtt'):
     """청크 단위로 콘텐츠 분석"""
@@ -143,12 +129,12 @@ def analyze_content_in_chunks(content, analysis_type='vtt'):
                 f"Assistant:"
             )
             all_results.append(result['completion'])
-            time.sleep(3)
+            time.sleep(5)  # API 호출 간격 증가
             
         except Exception as e:
             logger.error(f"Failed to process chunk {i}: {str(e)}")
             all_results.append(f"[이 부분 처리 중 오류 발생: {str(e)}]")
-            time.sleep(10)
+            time.sleep(10)  # 오류 발생 시 대기 시간 증가
     
     if not all_results:
         return "분석에 실패했습니다. 네트워크 연결을 확인해주세요."
