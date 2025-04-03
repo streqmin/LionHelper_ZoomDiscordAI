@@ -183,7 +183,8 @@ def format_analysis_result(content):
     categories = {
         '주요 내용': [],
         '키워드': [],
-        '분석': []
+        '분석': [],
+        '위험 발언': []  # 새로운 카테고리 추가
     }
     
     # 모든 섹션의 내용을 카테고리별로 분류
@@ -247,6 +248,34 @@ def format_analysis_result(content):
             html_content.append(f'        <li>{item}</li>')
         html_content.extend([
             '    </ul>',
+            '</div>'
+        ])
+
+    # 위험 발언 섹션
+    if categories['위험 발언']:
+        html_content.extend([
+            '<div class="category-section risk-section">',
+            '    <h2 class="category-title">위험 발언 분석</h2>',
+            '    <div class="risk-summary">',
+            '        <div class="risk-icon">⚠️</div>',
+            '        <p>강의 중 다음과 같은 위험 발언이 감지되었습니다.</p>',
+            '    </div>',
+            '    <ul class="risk-list">'
+        ])
+        for item in categories['위험 발언']:
+            html_content.append(f'        <li>{item}</li>')
+        html_content.extend([
+            '    </ul>',
+            '</div>'
+        ])
+    elif any(categories.values()):  # 다른 카테고리에 내용이 있는 경우에만
+        html_content.extend([
+            '<div class="category-section risk-section safe">',
+            '    <h2 class="category-title">위험 발언 분석</h2>',
+            '    <div class="risk-summary">',
+            '        <div class="risk-icon">✅</div>',
+            '        <p>강의에서 특별한 위험 발언이 감지되지 않았습니다.</p>',
+            '    </div>',
             '</div>'
         ])
     

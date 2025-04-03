@@ -470,7 +470,8 @@ th {
 
 .content-list,
 .keyword-list,
-.analysis-list {
+.analysis-list,
+.risk-list {
     list-style: none;
     padding: 0;
     margin: 0;
@@ -498,4 +499,59 @@ th {
     padding: 6px 12px;
     border-radius: 20px;
     font-size: 0.9em;
+}
+
+/* 위험 발언 섹션 스타일 */
+.risk-section {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.risk-section .category-title {
+    color: #e74c3c;
+    border-bottom-color: #e74c3c;
+}
+
+.risk-summary {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px;
+    background-color: #fdf2f2;
+    border-radius: 8px;
+    margin-bottom: 15px;
+}
+
+.risk-icon {
+    font-size: 24px;
+}
+
+.risk-summary p {
+    margin: 0;
+    color: #c0392b;
+    font-weight: 500;
+}
+
+.risk-list li {
+    background-color: #fff2f2;
+    border-left: 4px solid #e74c3c;
+    color: #c0392b;
+    margin-bottom: 10px;
+    padding: 12px 15px;
+    border-radius: 0 8px 8px 0;
+    line-height: 1.5;
+}
+
+/* 안전한 경우의 스타일 */
+.risk-section.safe .category-title {
+    color: #27ae60;
+    border-bottom-color: #27ae60;
+}
+
+.risk-section.safe .risk-summary {
+    background-color: #f0fff4;
+}
+
+.risk-section.safe .risk-summary p {
+    color: #27ae60;
 } 
