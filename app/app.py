@@ -28,25 +28,28 @@ if not api_key:
     raise ValueError("ANTHROPIC_API_KEY 환경 변수가 설정되지 않았습니다.")
 
 def split_content(content, max_length=800):
-    """콘텐츠를 작은 청크로 분할"""
+    """콘텐츠를 작은 청크로 분할 (재귀 없는 방식)"""
     chunks = []
-    current_chunk = []
+    current_chunk = ""
     current_length = 0
     
-    sentences = re.split(r'([.!?]+\s+)', content)
+    # 문장 단위로 분할하지 않고, 단순히 길이 기준으로 분할
+    words = content.split()
     
-    for sentence in sentences:
-        sentence_length = len(sentence)
-        if current_length + sentence_length > max_length and current_chunk:
-            chunks.append(''.join(current_chunk))
-            current_chunk = [sentence]
-            current_length = sentence_length
+    for word in words:
+        word_length = len(word) + 1  # 공백 포함
+        
+        if current_length + word_length > max_length:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+                current_chunk = word
+                current_length = word_length
         else:
-            current_chunk.append(sentence)
-            current_length += sentence_length
+            current_chunk += " " + word if current_chunk else word
+            current_length += word_length
     
     if current_chunk:
-        chunks.append(''.join(current_chunk))
+        chunks.append(current_chunk.strip())
     
     return chunks
 
@@ -86,38 +89,43 @@ def call_claude_api(prompt):
 
 def analyze_content_in_chunks(content, analysis_type='vtt'):
     """청크 단위로 콘텐츠 분석"""
-    chunks = split_content(content)
-    total_chunks = len(chunks)
-    logger.info(f"Split content into {total_chunks} chunks")
-    
-    all_results = []
-    for i, chunk in enumerate(chunks, 1):
-        logger.info(f"Processing chunk {i}/{total_chunks}")
+    try:
+        chunks = split_content(content)
+        total_chunks = len(chunks)
+        logger.info(f"Split content into {total_chunks} chunks")
         
-        try:
-            result = call_claude_api(
-                prompt=f"\n\nHuman: 당신은 {'줌 회의록' if analysis_type == 'vtt' else '채팅 로그'} 분석 전문가입니다. "
-                f"다음은 전체 {'회의록' if analysis_type == 'vtt' else '채팅'}의 {i}/{total_chunks} 부분입니다. "
-                f"이 부분을 분석해주세요:\n\n{chunk}\n\n"
-                f"다음 형식으로 분석 결과를 제공해주세요:\n\n"
-                f"# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n"
-                f"# 주요 키워드\n[이 부분의 주요 키워드들]\n\n"
-                f"{'# 중요 포인트' if analysis_type == 'vtt' else '# 대화 분위기'}\n"
-                f"[{'이 부분에서 특별히 주목할 만한 내용' if analysis_type == 'vtt' else '이 부분의 대화 톤과 분위기'}]\n\n"
-                f"Assistant:"
-            )
-            all_results.append(result['completion'])
-            time.sleep(5)  # API 호출 간격
+        all_results = []
+        for i, chunk in enumerate(chunks, 1):
+            logger.info(f"Processing chunk {i}/{total_chunks}")
             
-        except Exception as e:
-            logger.error(f"Failed to process chunk {i}: {str(e)}")
-            all_results.append(f"[이 부분 처리 중 오류 발생: {str(e)}]")
-            time.sleep(10)  # 오류 발생 시 대기 시간
-    
-    if not all_results:
-        return "분석에 실패했습니다. 네트워크 연결을 확인해주세요."
-    
-    return "\n\n".join(all_results)
+            try:
+                result = call_claude_api(
+                    prompt=f"\n\nHuman: 당신은 {'줌 회의록' if analysis_type == 'vtt' else '채팅 로그'} 분석 전문가입니다. "
+                    f"다음은 전체 {'회의록' if analysis_type == 'vtt' else '채팅'}의 {i}/{total_chunks} 부분입니다. "
+                    f"이 부분을 분석해주세요:\n\n{chunk}\n\n"
+                    f"다음 형식으로 분석 결과를 제공해주세요:\n\n"
+                    f"# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n"
+                    f"# 주요 키워드\n[이 부분의 주요 키워드들]\n\n"
+                    f"{'# 중요 포인트' if analysis_type == 'vtt' else '# 대화 분위기'}\n"
+                    f"[{'이 부분에서 특별히 주목할 만한 내용' if analysis_type == 'vtt' else '이 부분의 대화 톤과 분위기'}]\n\n"
+                    f"Assistant:"
+                )
+                all_results.append(result['completion'])
+                time.sleep(5)  # API 호출 간격
+                
+            except Exception as e:
+                logger.error(f"Failed to process chunk {i}: {str(e)}")
+                all_results.append(f"[이 부분 처리 중 오류 발생: {str(e)}]")
+                time.sleep(10)  # 오류 발생 시 대기 시간
+        
+        if not all_results:
+            return "분석에 실패했습니다. 네트워크 연결을 확인해주세요."
+        
+        return "\n\n".join(all_results)
+        
+    except Exception as e:
+        logger.error(f"Error in analyze_content_in_chunks: {str(e)}")
+        return f"분석 중 오류가 발생했습니다: {str(e)}"
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
