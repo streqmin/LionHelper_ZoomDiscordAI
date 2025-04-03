@@ -66,42 +66,59 @@ def analyze():
         logger.info(f"Form data: {request.form}")
         logger.info(f"Files: {request.files}")
         
-        if 'file' not in request.files:
-            logger.error("파일이 요청에 포함되지 않음")
-            return jsonify({'error': '파일이 없습니다'}), 400
+        # VTT 파일 확인
+        if 'vtt_file' not in request.files:
+            logger.error("VTT 파일이 요청에 포함되지 않음")
+            return jsonify({'error': 'VTT 파일이 없습니다'}), 400
             
-        file = request.files['file']
-        if file.filename == '':
-            logger.error("파일명이 비어있음")
-            return jsonify({'error': '선택된 파일이 없습니다'}), 400
+        vtt_file = request.files['vtt_file']
+        if vtt_file.filename == '':
+            logger.error("VTT 파일명이 비어있음")
+            return jsonify({'error': 'VTT 파일이 선택되지 않았습니다'}), 400
+
+        # 커리큘럼 파일 확인
+        if 'curriculum_file' not in request.files:
+            logger.error("커리큘럼 파일이 요청에 포함되지 않음")
+            return jsonify({'error': '커리큘럼 파일이 없습니다'}), 400
             
-        if not allowed_file(file.filename):
-            logger.error(f"허용되지 않은 파일 형식: {file.filename}")
-            return jsonify({'error': '허용되지 않은 파일 형식입니다'}), 400
-            
-        # 파일 저장
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        logger.info(f"파일 저장 완료: {filepath}")
+        curriculum_file = request.files['curriculum_file']
+        if curriculum_file.filename == '':
+            logger.error("커리큘럼 파일명이 비어있음")
+            return jsonify({'error': '커리큘럼 파일이 선택되지 않았습니다'}), 400
+
+        # VTT 파일 처리
+        vtt_filename = secure_filename(vtt_file.filename)
+        vtt_filepath = os.path.join(app.config['UPLOAD_FOLDER'], vtt_filename)
+        vtt_file.save(vtt_filepath)
+        logger.info(f"VTT 파일 저장 완료: {vtt_filepath}")
+
+        # 커리큘럼 파일 처리
+        curriculum_filename = secure_filename(curriculum_file.filename)
+        curriculum_filepath = os.path.join(app.config['UPLOAD_FOLDER'], curriculum_filename)
+        curriculum_file.save(curriculum_filepath)
+        logger.info(f"커리큘럼 파일 저장 완료: {curriculum_filepath}")
         
         try:
-            # 파일 내용 읽기
-            with open(filepath, 'r', encoding='utf-8') as f:
-                content = f.read()
-            logger.info(f"파일 내용 읽기 성공 (길이: {len(content)} 문자)")
+            # VTT 파일 내용 읽기
+            with open(vtt_filepath, 'r', encoding='utf-8') as f:
+                vtt_content = f.read()
+            logger.info(f"VTT 파일 내용 읽기 성공 (길이: {len(vtt_content)} 문자)")
             
-            # 분석 유형 결정
-            analysis_type = 'chat' if 'chat' in filename.lower() else 'vtt'
-            logger.info(f"분석 유형 결정: {analysis_type}")
+            # 커리큘럼 파일 처리 (엑셀 또는 JSON)
+            curriculum_content = process_curriculum_file(curriculum_filepath)
+            logger.info("커리큘럼 파일 처리 완료")
             
             # API를 통한 분석
-            result = api_client.analyze_text(content, analysis_type)
+            vtt_result = api_client.analyze_text(vtt_content, 'vtt')
+            curriculum_result = analyze_curriculum_match(vtt_result, curriculum_content)
             logger.info("분석 완료")
             
             # 결과를 HTML 형식으로 변환
-            html_result = format_analysis_result(result)
-            return jsonify({'result': html_result})
+            vtt_html = format_analysis_result(vtt_result)
+            return jsonify({
+                'vtt_result': vtt_html,
+                'curriculum_result': curriculum_result
+            })
             
         except Exception as e:
             logger.error(f"처리 중 오류 발생: {str(e)}")
@@ -109,7 +126,8 @@ def analyze():
         finally:
             # 임시 파일 삭제
             try:
-                os.remove(filepath)
+                os.remove(vtt_filepath)
+                os.remove(curriculum_filepath)
                 logger.info("임시 파일 삭제 완료")
             except Exception as e:
                 logger.warning(f"임시 파일 삭제 실패: {str(e)}")
@@ -117,6 +135,41 @@ def analyze():
     except Exception as e:
         logger.error(f"요청 처리 중 예상치 못한 오류 발생: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+def process_curriculum_file(filepath):
+    """커리큘럼 파일(엑셀 또는 JSON)을 처리하여 내용을 반환"""
+    ext = filepath.rsplit('.', 1)[1].lower()
+    if ext in ['xlsx', 'xls']:
+        import pandas as pd
+        df = pd.read_excel(filepath)
+        return df.to_dict('records')
+    elif ext == 'json':
+        import json
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    else:
+        raise ValueError('지원하지 않는 파일 형식입니다')
+
+def analyze_curriculum_match(vtt_result, curriculum_content):
+    """VTT 분석 결과와 커리큘럼을 매칭하여 분석"""
+    # TODO: 실제 매칭 로직 구현
+    return {
+        'summary': '커리큘럼 매칭 분석 결과입니다.',
+        'matched_subjects': [
+            {'name': '과목 1', 'achievement_rate': 80},
+            {'name': '과목 2', 'achievement_rate': 60}
+        ],
+        'details_matches': {
+            '과목 1': {
+                'matches': [True, False],
+                'detail_texts': ['세부내용 1', '세부내용 2']
+            },
+            '과목 2': {
+                'matches': [True],
+                'detail_texts': ['세부내용 1']
+            }
+        }
+    }
 
 def format_analysis_result(content):
     """분석 결과를 HTML 형식으로 변환"""
