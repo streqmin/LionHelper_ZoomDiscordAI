@@ -5,8 +5,7 @@ from app.config import Config
 from datetime import datetime
 import json
 import logging
-import time
-import requests
+from app.api_client import ClaudeAPIClient
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -26,96 +25,8 @@ api_key = os.getenv('ANTHROPIC_API_KEY')
 if not api_key:
     raise ValueError("ANTHROPIC_API_KEY 환경 변수가 설정되지 않았습니다.")
 
-def split_content(content, max_length=800):
-    """콘텐츠를 작은 청크로 분할"""
-    if not content:
-        return []
-    
-    chunks = []
-    current_chunk = ""
-    sentences = content.split('. ')
-    
-    for sentence in sentences:
-        if len(current_chunk) + len(sentence) < max_length:
-            current_chunk += sentence + '. '
-        else:
-            if current_chunk:
-                chunks.append(current_chunk.strip())
-            current_chunk = sentence + '. '
-    
-    if current_chunk:
-        chunks.append(current_chunk.strip())
-    
-    return chunks
-
-def call_claude_api(prompt):
-    """Claude API 호출"""
-    url = "https://api.anthropic.com/v1/complete"
-    headers = {
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json"
-    }
-    
-    data = {
-        "prompt": prompt,
-        "model": "claude-instant-1.2",
-        "max_tokens_to_sample": 1500,
-        "temperature": 0.7,
-        "stop_sequences": ["\n\nHuman:"]
-    }
-    
-    try:
-        response = requests.post(url, headers=headers, json=data, timeout=30)
-        response.raise_for_status()
-        return response.json()['completion']
-    except Exception as e:
-        logger.error(f"API 호출 실패: {str(e)}")
-        raise
-
-def analyze_content_in_chunks(content, analysis_type='vtt'):
-    """청크 단위로 콘텐츠 분석"""
-    try:
-        chunks = split_content(content)
-        total_chunks = len(chunks)
-        logger.info(f"Split content into {total_chunks} chunks")
-        
-        all_results = []
-        
-        for i, chunk in enumerate(chunks, 1):
-            logger.info(f"Processing chunk {i}/{total_chunks}")
-            
-            prompt = f"\n\nHuman: 당신은 {'줌 회의록' if analysis_type == 'vtt' else '채팅 로그'} 분석 전문가입니다. "
-            prompt += f"다음은 전체 {'회의록' if analysis_type == 'vtt' else '채팅'}의 {i}/{total_chunks} 부분입니다.\n\n"
-            prompt += f"{chunk}\n\n"
-            prompt += "다음 형식으로 분석 결과를 제공해주세요:\n\n"
-            prompt += "# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n"
-            prompt += "# 주요 키워드\n[이 부분의 주요 키워드들]\n\n"
-            prompt += f"{'# 중요 포인트' if analysis_type == 'vtt' else '# 대화 분위기'}\n"
-            prompt += f"[{'이 부분에서 특별히 주목할 만한 내용' if analysis_type == 'vtt' else '이 부분의 대화 톤과 분위기'}]\n\n"
-            prompt += "Assistant:"
-            
-            for attempt in range(3):
-                try:
-                    result = call_claude_api(prompt)
-                    all_results.append(result)
-                    time.sleep(8)
-                    break
-                except Exception as e:
-                    logger.error(f"Chunk {i} 처리 실패 (시도 {attempt + 1}/3): {str(e)}")
-                    if attempt < 2:
-                        wait_time = 5 * (2 ** attempt)
-                        logger.info(f"재시도 대기 중... {wait_time}초")
-                        time.sleep(wait_time)
-                    else:
-                        all_results.append(f"[이 부분 처리 중 오류 발생: {str(e)}]")
-                        time.sleep(15)
-        
-        return "\n\n".join(all_results) if all_results else "분석에 실패했습니다."
-        
-    except Exception as e:
-        logger.error(f"Error in analyze_content_in_chunks: {str(e)}")
-        return f"분석 중 오류가 발생했습니다: {str(e)}"
+# API 클라이언트 초기화
+api_client = ClaudeAPIClient(api_key)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
@@ -141,7 +52,7 @@ def analyze_vtt():
     if file.filename == '':
         return jsonify({'error': '선택된 파일이 없습니다.'}), 400
     
-    if not file.filename.endswith('.vtt'):
+    if not allowed_file(file.filename):
         return jsonify({'error': 'VTT 파일만 업로드 가능합니다.'}), 400
     
     try:
@@ -153,7 +64,7 @@ def analyze_vtt():
             content = f.read()
         
         # VTT 파일 분석
-        result = analyze_content_in_chunks(content, 'vtt')
+        result = api_client.analyze_content(content, 'vtt')
         
         # 분석 결과 저장
         result_filename = f"analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
@@ -201,6 +112,9 @@ def analyze_chat():
             logger.info("Processing file upload")
             file = request.files['file']
             if file.filename != '':
+                if not allowed_file(file.filename):
+                    return jsonify({'error': 'TXT 파일만 업로드 가능합니다.'}), 400
+                    
                 filename = secure_filename(file.filename)
                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 file.save(filepath)
@@ -229,7 +143,7 @@ def analyze_chat():
         logger.info(f"Content length: {len(content)} characters")
         
         # 채팅 내용 분석
-        result = analyze_content_in_chunks(content, 'chat')
+        result = api_client.analyze_content(content, 'chat')
         
         # 분석 결과 저장
         result_filename = f"chat_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
