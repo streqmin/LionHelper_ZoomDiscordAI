@@ -126,7 +126,7 @@ def format_analysis_result(content):
     sections = content.split('---')
     logger.info(f"섹션 분할 결과: {sections}")
     
-    html_content = ''
+    html_content = []
     section_number = 1
     
     for section in sections:
@@ -150,60 +150,62 @@ def format_analysis_result(content):
         
         # HTML 생성
         if any(parts.values()):
-            html_content += f'''
-                <div class="summary-section">
-                    <h2><span class="section-number">{section_number}.</span>섹션 {section_number}</h2>
-            '''
+            section_html = [
+                '<div class="summary-section">',
+                f'    <h2><span class="section-number">{section_number}.</span>섹션 {section_number}</h2>'
+            ]
             
             # 주요 내용
             if parts['주요 내용']:
-                html_content += f'''
-                    <div class="subsection">
-                        <div class="subsection-title">
-                            <span class="section-number">{section_number}.1</span>주요 내용
-                        </div>
-                        <ul>
-                            {format_list_items('\n'.join(parts['주요 내용']))}
-                        </ul>
-                    </div>
-                '''
+                section_html.extend([
+                    '    <div class="subsection">',
+                    f'        <div class="subsection-title">',
+                    f'            <span class="section-number">{section_number}.1</span>주요 내용',
+                    '        </div>',
+                    '        <ul>',
+                    f'            {format_list_items(chr(10).join(parts["주요 내용"]))}',
+                    '        </ul>',
+                    '    </div>'
+                ])
             
             # 키워드
             if parts['키워드']:
-                html_content += f'''
-                    <div class="subsection">
-                        <div class="subsection-title">
-                            <span class="section-number">{section_number}.2</span>키워드
-                        </div>
-                        <ul>
-                            {format_list_items('\n'.join(parts['키워드']))}
-                        </ul>
-                    </div>
-                '''
+                section_html.extend([
+                    '    <div class="subsection">',
+                    f'        <div class="subsection-title">',
+                    f'            <span class="section-number">{section_number}.2</span>키워드',
+                    '        </div>',
+                    '        <ul>',
+                    f'            {format_list_items(chr(10).join(parts["키워드"]))}',
+                    '        </ul>',
+                    '    </div>'
+                ])
             
             # 분석
             if parts['분석']:
-                html_content += f'''
-                    <div class="subsection">
-                        <div class="subsection-title">
-                            <span class="section-number">{section_number}.3</span>분석
-                        </div>
-                        <ul>
-                            {format_list_items('\n'.join(parts['분석']))}
-                        </ul>
-                    </div>
-                '''
+                section_html.extend([
+                    '    <div class="subsection">',
+                    f'        <div class="subsection-title">',
+                    f'            <span class="section-number">{section_number}.3</span>분석',
+                    '        </div>',
+                    '        <ul>',
+                    f'            {format_list_items(chr(10).join(parts["분석"]))}',
+                    '        </ul>',
+                    '    </div>'
+                ])
             
-            html_content += '</div>'
+            section_html.append('</div>')
+            html_content.extend(section_html)
             section_number += 1
     
-    logger.info(f"최종 HTML 결과: {html_content}")
-    return html_content
+    final_html = '\n'.join(html_content)
+    logger.info(f"최종 HTML 결과: {final_html}")
+    return final_html
 
 def format_list_items(content):
     """목록 항목을 HTML 형식으로 변환"""
     items = []
-    for line in content.split('\n'):
+    for line in content.split(chr(10)):  # chr(10)은 '\n'과 동일
         line = line.strip()
         if line.startswith('- '):
             items.append(f'<li>{line[2:].strip()}</li>')
