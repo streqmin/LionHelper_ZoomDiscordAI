@@ -29,7 +29,7 @@ if not api_key:
 
 # httpx 클라이언트 설정
 http_client = httpx.Client(
-    timeout=httpx.Timeout(60.0, connect=30.0),
+    timeout=httpx.Timeout(30.0, connect=15.0),  # 타임아웃 감소
     limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
     verify=True
 )
@@ -44,7 +44,7 @@ logger.info("Anthropic client initialized successfully")
 # 업로드 폴더 생성
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-def split_content(content, max_length=2000):
+def split_content(content, max_length=1000):  # 청크 크기를 1000자로 감소
     """콘텐츠를 작은 청크로 분할"""
     chunks = []
     lines = content.split('\n')
@@ -75,8 +75,8 @@ def call_claude_api(prompt):
     try:
         completion = client.completions.create(
             prompt=prompt,
-            model="claude-2.1",
-            max_tokens_to_sample=2000,
+            model="claude-instant-1.2",  # Claude Instant 모델로 변경
+            max_tokens_to_sample=1500,  # 토큰 수 감소
             stop_sequences=["\n\nHuman:"],
             temperature=0.7
         )
@@ -103,20 +103,36 @@ def analyze_content_in_chunks(content, analysis_type='vtt'):
         try:
             completion = call_claude_api(prompt)
             all_results.append(completion.completion)
-            time.sleep(1)  # API 호출 간 간격 추가
+            time.sleep(2)  # API 호출 간 간격 증가
         except Exception as e:
             logger.error(f"Failed to process chunk {i}: {str(e)}")
             all_results.append(f"[이 부분 처리 중 오류 발생: {str(e)}]")
+            time.sleep(5)  # 오류 발생 시 더 긴 대기 시간
     
     # 최종 요약 생성
-    if analysis_type == 'vtt':
-        final_prompt = f"\n\nHuman: 다음은 회의록 각 부분의 분석 결과입니다. 이를 종합하여 최종 요약을 만들어주세요:\n\n{' '.join(all_results)}\n\n다음 형식으로 전체 요약을 제공해주세요:\n\n# 회의 요약\n- 회의 주제:\n- 주요 참석자:\n- 회의 시간:\n- 핵심 논의 사항:\n- 결정사항:\n- 후속 조치사항:\n\n# 상세 내용\n[시간대별 주요 내용]\n\n# 주요 키워드\n[회의에서 언급된 주요 키워드들]\n\n# 액션 아이템\n[구체적인 할 일과 담당자]\n\n# 추가 참고사항\n[기타 중요한 정보나 맥락]\n\nAssistant:"
-    else:
-        final_prompt = f"\n\nHuman: 다음은 채팅 로그 각 부분의 분석 결과입니다. 이를 종합하여 최종 요약을 만들어주세요:\n\n{' '.join(all_results)}\n\n다음 형식으로 전체 요약을 제공해주세요:\n\n# 채팅 요약\n- 대화 주제:\n- 주요 참여자:\n- 핵심 논의 사항:\n- 결정사항:\n- 후속 조치사항:\n\n# 주요 키워드\n[대화에서 언급된 주요 키워드들]\n\n# 감정/태도 분석\n[대화의 전반적인 톤과 참여자들의 태도]\n\n# 추가 참고사항\n[기타 중요한 정보나 맥락]\n\nAssistant:"
-    
     try:
-        final_completion = call_claude_api(final_prompt)
+        summary_chunks = split_content(' '.join(all_results), 1000)  # 결과도 청크로 분할
+        final_summaries = []
+        
+        for i, summary_chunk in enumerate(summary_chunks, 1):
+            if analysis_type == 'vtt':
+                final_prompt = f"\n\nHuman: 다음은 회의록 분석 결과의 {i}/{len(summary_chunks)} 부분입니다. 이 내용을 요약해주세요:\n\n{summary_chunk}\n\nAssistant:"
+            else:
+                final_prompt = f"\n\nHuman: 다음은 채팅 분석 결과의 {i}/{len(summary_chunks)} 부분입니다. 이 내용을 요약해주세요:\n\n{summary_chunk}\n\nAssistant:"
+            
+            completion = call_claude_api(final_prompt)
+            final_summaries.append(completion.completion)
+            time.sleep(2)
+        
+        # 최종 통합 요약
+        if analysis_type == 'vtt':
+            final_integration_prompt = f"\n\nHuman: 다음 요약들을 하나의 완성된 회의록 분석으로 통합해주세요:\n\n{' '.join(final_summaries)}\n\n다음 형식으로 작성해주세요:\n\n# 회의 요약\n- 회의 주제:\n- 주요 참석자:\n- 회의 시간:\n- 핵심 논의 사항:\n- 결정사항:\n- 후속 조치사항:\n\n# 상세 내용\n[시간대별 주요 내용]\n\n# 주요 키워드\n[회의에서 언급된 주요 키워드들]\n\n# 액션 아이템\n[구체적인 할 일과 담당자]\n\n# 추가 참고사항\n[기타 중요한 정보나 맥락]\n\nAssistant:"
+        else:
+            final_integration_prompt = f"\n\nHuman: 다음 요약들을 하나의 완성된 채팅 분석으로 통합해주세요:\n\n{' '.join(final_summaries)}\n\n다음 형식으로 작성해주세요:\n\n# 채팅 요약\n- 대화 주제:\n- 주요 참여자:\n- 핵심 논의 사항:\n- 결정사항:\n- 후속 조치사항:\n\n# 주요 키워드\n[대화에서 언급된 주요 키워드들]\n\n# 감정/태도 분석\n[대화의 전반적인 톤과 참여자들의 태도]\n\n# 추가 참고사항\n[기타 중요한 정보나 맥락]\n\nAssistant:"
+        
+        final_completion = call_claude_api(final_integration_prompt)
         return final_completion.completion
+        
     except Exception as e:
         logger.error(f"Failed to generate final summary: {str(e)}")
         return "\n".join(all_results)
