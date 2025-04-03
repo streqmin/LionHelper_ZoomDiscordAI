@@ -407,10 +407,6 @@
         <!-- 커리큘럼 매칭 분석 결과 -->
         <div id="curriculumResultContainer" class="chat-report" style="display: none;">
             <h2>커리큘럼 매칭 분석</h2>
-            <div class="summary-section">
-                <h2>강의 내용 종합 분석</h2>
-                <p id="curriculumSummaryText"></p>
-            </div>
             
             <div class="summary-section">
                 <h2>교과목별 달성도</h2>
@@ -580,13 +576,7 @@
         }
 
         function displayCurriculumAnalysis(data) {
-            const summaryText = document.getElementById('curriculumSummaryText');
             const matchesContent = document.getElementById('curriculumMatchesContent');
-            
-            // 종합 분석 결과 표시
-            if (data.summary) {
-                summaryText.textContent = data.summary;
-            }
             
             // 교과목별 달성도 표시
             if (data.matched_subjects) {
