@@ -2,8 +2,8 @@ import os
 import multiprocessing
 
 # 워커 설정
-workers = 2  # 워커 수 감소
-worker_class = "gevent"
+workers = 2
+worker_class = "sync"  # gevent에서 sync로 변경
 worker_connections = 1000
 timeout = 300
 keepalive = 2
