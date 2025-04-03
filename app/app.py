@@ -254,6 +254,8 @@ def format_analysis_result(content):
     # 위험 발언 섹션
     # 모든 섹션의 위험 발언을 검사하여 실제 위험 발언이 있는지 확인
     risk_items = []
+    has_real_risks = False
+    
     for item in categories['위험 발언']:
         item = item.strip()
         # 위험 발언이 없다는 내용의 텍스트는 제외
@@ -263,11 +265,12 @@ def format_analysis_result(content):
             not item.startswith('- 위험 발언이 없') and
             not '발견되지 않' in item and
             not '확인되지 않' in item and
-            not '포함되어 있지 않' in item):
+            not '포함되어 있지 않' in item and
+            not '위험한 내용이 없' in item):
             risk_items.append(item)
+            has_real_risks = True
     
-    if risk_items:
-        # 위험 발언이 있는 경우
+    if has_real_risks and risk_items:  # 실제 위험 발언이 있는 경우에만
         html_content.extend([
             '<div class="category-section risk-section">',
             '    <h2 class="category-title">위험 발언 분석</h2>',
