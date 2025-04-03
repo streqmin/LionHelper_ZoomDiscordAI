@@ -218,123 +218,92 @@
     </style>
 </head>
 <body>
-    <nav class="nav-bar">
+    <div class="nav-bar">
         <div class="nav-container">
             <a href="/" class="nav-back">
-                <i class="fas fa-arrow-left"></i>
-                메인으로 돌아가기
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                돌아가기
             </a>
-            <span class="nav-title">채팅 기록 분석</span>
-            <div></div>
+            <div class="nav-title">AI 강의 분석기</div>
         </div>
-    </nav>
+    </div>
 
     <div class="container">
         <div class="upload-section">
-            <form id="chat-form" enctype="multipart/form-data">
+            <form id="uploadForm" enctype="multipart/form-data">
                 <div class="form-group">
-                    <label for="chat-file">채팅 기록 파일 선택:</label>
-                    <input type="file" id="chat-file" name="file" accept=".txt" required>
-                    <small class="file-info">* 텍스트 파일(.txt) 형식의 채팅 기록을 업로드해주세요.</small>
+                    <label for="file">채팅 기록 파일 업로드</label>
+                    <input type="file" id="file" name="file" accept=".txt" required>
+                    <span class="file-info">텍스트 파일(.txt)만 업로드 가능합니다.</span>
                 </div>
-                <button type="submit" class="btn-primary">채팅 분석 시작</button>
+                <button type="submit" class="btn-primary">분석 시작</button>
             </form>
         </div>
 
-        <div id="loading-spinner" class="loading-spinner" style="display: none;">
+        <div id="loadingSpinner" class="loading-spinner" style="display: none;">
             <div class="spinner"></div>
-            <p>분석 중입니다...</p>
+            <p>분석 중입니다. 잠시만 기다려주세요...</p>
         </div>
 
-        <div id="chatAnalysis" class="chat-report" style="display: none;"></div>
+        <div id="resultContainer" class="chat-report" style="display: none;">
+            <!-- 분석 결과가 여기에 동적으로 추가됩니다 -->
+        </div>
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const form = document.getElementById('chat-form');
-            const loadingSpinner = document.getElementById('loading-spinner');
-            const resultSection = document.getElementById('chatAnalysis');
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('file');
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            const resultContainer = document.getElementById('resultContainer');
+            
+            if (!fileInput.files.length) {
+                alert('파일을 선택해주세요.');
+                return;
+            }
 
-            form.addEventListener('submit', async function(e) {
-                e.preventDefault();
-                
-                const formData = new FormData(form);
-                
-                try {
-                    loadingSpinner.style.display = 'block';
-                    resultSection.style.display = 'none';
-                    
-                    const response = await fetch('/analyze_chat', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (data.status === 'error') {
-                        throw new Error(data.error);
-                    }
-                    
-                    // 분석 결과 표시
-                    resultSection.innerHTML = formatChatAnalysis(data.result);
-                    resultSection.style.display = 'block';
-                    
-                } catch (error) {
-                    alert('오류가 발생했습니다: ' + error.message);
-                } finally {
-                    loadingSpinner.style.display = 'none';
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                loadingSpinner.style.display = 'block';
+                resultContainer.style.display = 'none';
+
+                const response = await fetch('/analyze_chat', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('분석 중 오류가 발생했습니다.');
                 }
-            });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                // 결과 표시
+                if (data.result) {
+                    resultContainer.innerHTML = data.result;
+                    resultContainer.style.display = 'block';
+                    
+                    // 결과가 표시된 후 스크롤
+                    resultContainer.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    throw new Error('분석 결과가 없습니다.');
+                }
+                
+            } catch (error) {
+                alert(error.message);
+            } finally {
+                loadingSpinner.style.display = 'none';
+            }
         });
-
-        function formatChatAnalysis(content) {
-            const sections = content.split(/(?=\d\. )/);
-            let formattedContent = '';
-
-            sections.forEach(section => {
-                if (section.trim()) {
-                    const mainNumber = section.match(/^(\d+)\./)?.[1] || '';
-                    const mainTitle = section.match(/^\d+\. (.+)$/m)?.[1] || '';
-                    const sectionContent = section.replace(/^\d+\. .+\n/m, '').trim();
-                    
-                    if (!mainTitle) return;
-                    
-                    const subsections = sectionContent.split(/(?=\d+\.\d+ )/);
-                    
-                    formattedContent += `
-                        <div class="summary-section">
-                            <h2><span class="section-number">${mainNumber}.</span>${mainTitle}</h2>
-                            ${subsections.map(subsection => {
-                                if (!subsection.trim()) return '';
-                                
-                                const subNumber = subsection.match(/^(\d+\.\d+) /)?.[1] || '';
-                                const subTitle = subsection.match(/^\d+\.\d+ (.+)$/m)?.[1] || '';
-                                const subContent = subsection.replace(/^\d+\.\d+ .+\n/m, '').trim();
-                                
-                                if (!subTitle || !subContent.trim()) return '';
-                                
-                                return `
-                                    <div class="subsection">
-                                        <div class="subsection-title">
-                                            <span class="section-number">${subNumber}</span>${subTitle}
-                                        </div>
-                                        <ul>
-                                            ${subContent.split('\n')
-                                                .map(line => line.trim())
-                                                .filter(line => line.startsWith('•') || line.startsWith('-'))
-                                                .map(line => `<li>${line.replace(/^[•-]\s*/, '')}</li>`)
-                                                .join('')}
-                                        </ul>
-                                    </div>
-                                `;
-                            }).join('')}
-                        </div>
-                    `;
-                }
-            });
-
-            return formattedContent;
-        }
     </script>
 </body>
 </html> 
