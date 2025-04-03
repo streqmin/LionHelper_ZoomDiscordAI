@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 from flask import Flask, request, jsonify, render_template
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
@@ -98,7 +99,9 @@ def analyze():
             result = api_client.analyze_text(content, analysis_type)
             logger.info("분석 완료")
             
-            return jsonify({'result': result})
+            # 결과를 HTML 형식으로 변환
+            html_result = format_analysis_result(result)
+            return jsonify({'result': html_result})
             
         except Exception as e:
             logger.error(f"처리 중 오류 발생: {str(e)}")
@@ -114,6 +117,91 @@ def analyze():
     except Exception as e:
         logger.error(f"요청 처리 중 예상치 못한 오류 발생: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+def format_analysis_result(content):
+    """분석 결과를 HTML 형식으로 변환"""
+    logger.info(f"원본 분석 결과: {content}")
+    
+    sections = re.split(r'(?=\d\. )', content)
+    logger.info(f"섹션 분할 결과: {sections}")
+    
+    html_content = ''
+    
+    for section in sections:
+        if section.strip():
+            logger.info(f"처리 중인 섹션: {section}")
+            main_match = re.match(r'^(\d+)\. (.+?)(?:\n|$)', section, re.MULTILINE)
+            
+            if not main_match:
+                logger.warning(f"메인 섹션 매칭 실패: {section}")
+                continue
+                
+            main_number = main_match.group(1)
+            main_title = main_match.group(2)
+            logger.info(f"메인 섹션 매칭: 번호={main_number}, 제목={main_title}")
+            
+            section_content = re.sub(r'^\d+\. .+?(?:\n|$)', '', section, flags=re.MULTILINE).strip()
+            logger.info(f"섹션 내용: {section_content}")
+            
+            subsections = re.split(r'(?=\d+\.\d+ )', section_content)
+            logger.info(f"하위 섹션 분할: {subsections}")
+            
+            html_content += f'''
+                <div class="summary-section">
+                    <h2><span class="section-number">{main_number}.</span>{main_title}</h2>
+                    {format_subsections(subsections)}
+                </div>
+            '''
+    
+    logger.info(f"최종 HTML 결과: {html_content}")
+    return html_content
+
+def format_subsections(subsections):
+    """하위 섹션을 HTML 형식으로 변환"""
+    html_subsections = ''
+    
+    for subsection in subsections:
+        if not subsection.strip():
+            continue
+            
+        logger.info(f"처리 중인 하위 섹션: {subsection}")
+        sub_match = re.match(r'^(\d+\.\d+) (.+?)(?:\n|$)', subsection, re.MULTILINE)
+        
+        if not sub_match:
+            logger.warning(f"하위 섹션 매칭 실패: {subsection}")
+            continue
+            
+        sub_number = sub_match.group(1)
+        sub_title = sub_match.group(2)
+        logger.info(f"하위 섹션 매칭: 번호={sub_number}, 제목={sub_title}")
+        
+        sub_content = re.sub(r'^\d+\.\d+ .+?(?:\n|$)', '', subsection, flags=re.MULTILINE).strip()
+        logger.info(f"하위 섹션 내용: {sub_content}")
+        
+        html_subsections += f'''
+            <div class="subsection">
+                <div class="subsection-title">
+                    <span class="section-number">{sub_number}</span>{sub_title}
+                </div>
+                <ul>
+                    {format_list_items(sub_content)}
+                </ul>
+            </div>
+        '''
+    
+    return html_subsections
+
+def format_list_items(content):
+    """목록 항목을 HTML 형식으로 변환"""
+    items = content.split('\n')
+    html_items = ''
+    
+    for item in items:
+        item = item.strip()
+        if item.startswith('•') or item.startswith('-'):
+            html_items += f'<li>{item[1:].strip()}</li>'
+    
+    return html_items
 
 if __name__ == '__main__':
     app.run(debug=True) 
