@@ -475,10 +475,12 @@ def format_analysis_result(content):
     
     # 카테고리별로 내용을 저장할 딕셔너리
     categories = {
-        '주요 내용': [],
-        '키워드': [],
-        '분석': [],
-        '위험 발언': []
+        '주요 대화 주제': [],
+        '수강생 감정/태도 분석': [],
+        '어려움/불만 상세 분석': [],
+        '개선 제안': [],
+        '위험 발언 및 주의사항': [],
+        '종합 제언': []
     }
     
     # 모든 섹션의 내용을 카테고리별로 분류
@@ -500,88 +502,91 @@ def format_analysis_result(content):
             if line and current_category in categories:
                 categories[current_category].append(line)
     
-    # 주요 내용과 분석 섹션 재요약
-    categories['주요 내용'] = summarize_content(categories['주요 내용'])
-    categories['분석'] = summarize_content(categories['분석'])
-    
     # HTML 생성
     html_content = ['<div class="analysis-result">']
     
-    # 주요 내용 섹션
-    if categories['주요 내용']:
+    # 주요 대화 주제 섹션
+    if categories['주요 대화 주제']:
         html_content.extend([
             '<div class="category-section">',
-            '    <h2 class="category-title">주요 내용</h2>',
+            '    <h2 class="category-title">주요 대화 주제</h2>',
             '    <ul class="content-list">'
         ])
-        for item in categories['주요 내용']:
+        for item in categories['주요 대화 주제']:
             html_content.append(f'        <li>{item}</li>')
         html_content.extend([
             '    </ul>',
             '</div>'
         ])
     
-    # 키워드 섹션
-    if categories['키워드']:
+    # 수강생 감정/태도 분석 섹션
+    if categories['수강생 감정/태도 분석']:
         html_content.extend([
             '<div class="category-section">',
-            '    <h2 class="category-title">키워드</h2>',
-            '    <ul class="keyword-list">'
-        ])
-        for item in categories['키워드']:
-            html_content.append(f'        <li>{item}</li>')
-        html_content.extend([
-            '    </ul>',
-            '</div>'
-        ])
-    
-    # 분석 섹션
-    if categories['분석']:
-        html_content.extend([
-            '<div class="category-section">',
-            '    <h2 class="category-title">분석</h2>',
+            '    <h2 class="category-title">수강생 감정/태도 분석</h2>',
             '    <ul class="analysis-list">'
         ])
-        for item in categories['분석']:
+        for item in categories['수강생 감정/태도 분석']:
+            html_content.append(f'        <li>{item}</li>')
+        html_content.extend([
+            '    </ul>',
+            '</div>'
+        ])
+    
+    # 어려움/불만 상세 분석 섹션
+    if categories['어려움/불만 상세 분석']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">어려움/불만 상세 분석</h2>',
+            '    <ul class="analysis-list">'
+        ])
+        for item in categories['어려움/불만 상세 분석']:
             html_content.append(f'        <li>{item}</li>')
         html_content.extend([
             '    </ul>',
             '</div>'
         ])
 
-    # 위험 발언 섹션
-    # 모든 섹션의 위험 발언을 검사하여 실제 위험 발언이 있는지 확인
+    # 개선 제안 섹션
+    if categories['개선 제안']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">개선 제안</h2>',
+            '    <ul class="analysis-list">'
+        ])
+        for item in categories['개선 제안']:
+            html_content.append(f'        <li>{item}</li>')
+        html_content.extend([
+            '    </ul>',
+            '</div>'
+        ])
+
+    # 위험 발언 및 주의사항 섹션
     risk_items = []
     has_real_risks = False
     
-    for item in categories['위험 발언']:
+    for item in categories['위험 발언 및 주의사항']:
         item = item.strip()
         # 위험 발언이 없다는 내용의 텍스트는 제외
         if (item and 
             not item.endswith('없습니다.') and 
-            not item.startswith('위험 발언이 없') and
-            not item.startswith('- 위험 발언이 없') and
+            not item.startswith('특별한 주의사항이 없') and
             not '발견되지 않' in item and
             not '확인되지 않' in item and
             not '포함되어 있지 않' in item and
             not '위험한 내용이 없' in item and
             not '특별한 위험' in item and
             not '부적절한 내용이 없' in item):
-            # 실제 위험 발언인 경우에만 추가
-            if not any(safe_phrase in item.lower() for safe_phrase in [
-                '없습니다', '발견되지 않', '확인되지 않', '포함되어 있지 않',
-                '감지되지 않', '발견할 수 없', '문제가 없'
-            ]):
-                risk_items.append(item)
-                has_real_risks = True
+            risk_items.append(item)
+            has_real_risks = True
     
     if has_real_risks and risk_items:  # 실제 위험 발언이 있는 경우에만
         html_content.extend([
             '<div class="category-section risk-section">',
-            '    <h2 class="category-title">위험 발언 분석</h2>',
+            '    <h2 class="category-title">위험 발언 및 주의사항</h2>',
             '    <div class="risk-summary">',
             '        <div class="risk-icon">⚠️</div>',
-            '        <p>강의 중 다음과 같은 위험 발언이 감지되었습니다.</p>',
+            '        <p>채팅에서 다음과 같은 위험 발언이 감지되었습니다.</p>',
             '    </div>',
             '    <ul class="risk-list">'
         ])
@@ -595,11 +600,25 @@ def format_analysis_result(content):
         # 위험 발언이 없는 경우
         html_content.extend([
             '<div class="category-section risk-section safe">',
-            '    <h2 class="category-title">위험 발언 분석</h2>',
+            '    <h2 class="category-title">위험 발언 및 주의사항</h2>',
             '    <div class="risk-summary">',
             '        <div class="risk-icon">✅</div>',
-            '        <p>강의에서 특별한 위험 발언이 감지되지 않았습니다.</p>',
+            '        <p>채팅에서 특별한 위험 발언이 감지되지 않았습니다.</p>',
             '    </div>',
+            '</div>'
+        ])
+
+    # 종합 제언 섹션
+    if categories['종합 제언']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">종합 제언</h2>',
+            '    <ul class="analysis-list">'
+        ])
+        for item in categories['종합 제언']:
+            html_content.append(f'        <li>{item}</li>')
+        html_content.extend([
+            '    </ul>',
             '</div>'
         ])
     
