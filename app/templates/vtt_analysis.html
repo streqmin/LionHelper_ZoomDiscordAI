@@ -297,9 +297,14 @@
         <div class="upload-section">
             <form id="uploadForm" enctype="multipart/form-data">
                 <div class="form-group">
-                    <label for="file">VTT 파일 업로드</label>
-                    <input type="file" id="file" name="file" accept=".vtt" required>
+                    <label for="vttFile">VTT 파일 업로드</label>
+                    <input type="file" id="vttFile" name="vtt_file" accept=".vtt" required>
                     <span class="file-info">VTT 파일(.vtt)만 업로드 가능합니다.</span>
+                </div>
+                <div class="form-group">
+                    <label for="curriculumFile">커리큘럼 파일 업로드</label>
+                    <input type="file" id="curriculumFile" name="curriculum_file" accept=".xlsx,.xls,.json" required>
+                    <span class="file-info">엑셀 파일(.xlsx, .xls) 또는 JSON 파일(.json)만 업로드 가능합니다.</span>
                 </div>
                 <button type="submit" class="btn-primary">분석 시작</button>
             </form>
@@ -310,30 +315,62 @@
             <p>분석 중입니다. 잠시만 기다려주세요...</p>
         </div>
 
-        <div id="resultContainer" class="chat-report" style="display: none;">
-            <!-- 분석 결과가 여기에 동적으로 추가됩니다 -->
+        <!-- VTT 분석 결과 -->
+        <div id="vttResultContainer" class="chat-report" style="display: none;">
+            <h2>강의 내용 요약 (VTT 기반)</h2>
+            <div id="vttAnalysis"></div>
+        </div>
+
+        <!-- 커리큘럼 매칭 분석 결과 -->
+        <div id="curriculumResultContainer" class="chat-report" style="display: none;">
+            <h2>커리큘럼 매칭 분석</h2>
+            <div class="summary-section">
+                <h2>강의 내용 종합 분석</h2>
+                <p id="curriculumSummaryText"></p>
+            </div>
+            
+            <div class="summary-section">
+                <h2>교과목별 달성도</h2>
+                <div id="curriculumMatchesContent"></div>
+            </div>
+            
+            <div class="summary-section">
+                <h2>세부 매칭 결과</h2>
+                <div id="matchingDetails"></div>
+            </div>
+
+            <div class="summary-section">
+                <h2>교과목별 달성도 차트</h2>
+                <canvas id="subjectChart"></canvas>
+            </div>
         </div>
     </div>
 
     <script>
+        let subjectChart = null;  // 전역 변수로 차트 객체 선언
+
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            const fileInput = document.getElementById('file');
+            const vttFileInput = document.getElementById('vttFile');
+            const curriculumFileInput = document.getElementById('curriculumFile');
             const loadingSpinner = document.getElementById('loadingSpinner');
-            const resultContainer = document.getElementById('resultContainer');
+            const vttResultContainer = document.getElementById('vttResultContainer');
+            const curriculumResultContainer = document.getElementById('curriculumResultContainer');
             
-            if (!fileInput.files.length) {
-                alert('파일을 선택해주세요.');
+            if (!vttFileInput.files.length || !curriculumFileInput.files.length) {
+                alert('VTT 파일과 커리큘럼 파일을 모두 선택해주세요.');
                 return;
             }
 
             const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
+            formData.append('vtt_file', vttFileInput.files[0]);
+            formData.append('curriculum_file', curriculumFileInput.files[0]);
 
             try {
                 loadingSpinner.style.display = 'block';
-                resultContainer.style.display = 'none';
+                vttResultContainer.style.display = 'none';
+                curriculumResultContainer.style.display = 'none';
 
                 const response = await fetch('/analyze_vtt', {
                     method: 'POST',
@@ -350,16 +387,20 @@
                     throw new Error(data.error);
                 }
 
-                // 결과 표시
-                if (data.result) {
-                    resultContainer.innerHTML = data.result;
-                    resultContainer.style.display = 'block';
-                    
-                    // 결과가 표시된 후 스크롤
-                    resultContainer.scrollIntoView({ behavior: 'smooth' });
-                } else {
-                    throw new Error('분석 결과가 없습니다.');
+                // VTT 분석 결과 표시
+                if (data.vtt_result) {
+                    document.getElementById('vttAnalysis').innerHTML = data.vtt_result;
+                    vttResultContainer.style.display = 'block';
                 }
+
+                // 커리큘럼 분석 결과 표시
+                if (data.curriculum_result) {
+                    displayCurriculumAnalysis(data.curriculum_result);
+                    curriculumResultContainer.style.display = 'block';
+                }
+
+                // 결과가 표시된 후 스크롤
+                vttResultContainer.scrollIntoView({ behavior: 'smooth' });
                 
             } catch (error) {
                 alert(error.message);
@@ -367,6 +408,139 @@
                 loadingSpinner.style.display = 'none';
             }
         });
+
+        function createChart(matchedSubjects) {
+            const canvas = document.getElementById('subjectChart');
+            if (!canvas) {
+                console.error('차트를 그릴 canvas 요소를 찾을 수 없습니다.');
+                return;
+            }
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                console.error('canvas context를 가져올 수 없습니다.');
+                return;
+            }
+            
+            // 기존 차트 제거
+            if (subjectChart) {
+                subjectChart.destroy();
+            }
+            
+            // 매칭된 교과목이 없는 경우 처리
+            if (!matchedSubjects || matchedSubjects.length === 0) {
+                canvas.parentElement.innerHTML = '<p>매칭된 교과목이 없습니다.</p>';
+                return;
+            }
+            
+            const labels = matchedSubjects.map(subject => subject.name);
+            const data = matchedSubjects.map(subject => subject.achievement_rate);
+            
+            subjectChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '달성도 (%)',
+                        data: data,
+                        backgroundColor: 'rgba(255, 159, 64, 0.6)',
+                        borderColor: 'rgba(255, 159, 64, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: {
+                                font: {
+                                    size: 14
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function generateDetailsTableRows(detailsMatches) {
+            let rows = '';
+            for (const [subject, matchInfo] of Object.entries(detailsMatches)) {
+                matchInfo.matches.forEach((achieved, index) => {
+                    rows += `
+                        <tr>
+                            <td>${subject}</td>
+                            <td>${matchInfo.detail_texts[index]}</td>
+                            <td class="status-cell ${achieved ? 'achieved' : 'not-achieved'}">
+                                ${achieved ? 
+                                    '<span class="status-icon">✓</span>' : 
+                                    '<span class="status-icon">✗</span>'}
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            return rows;
+        }
+
+        function displayCurriculumAnalysis(data) {
+            const summaryText = document.getElementById('curriculumSummaryText');
+            const matchesContent = document.getElementById('curriculumMatchesContent');
+            
+            // 종합 분석 결과 표시
+            if (data.summary) {
+                summaryText.textContent = data.summary;
+            }
+            
+            // 교과목별 달성도 표시
+            if (data.matched_subjects) {
+                const subjectsList = document.createElement('ul');
+                subjectsList.className = 'matched-subjects-list';
+                
+                data.matched_subjects.forEach(subject => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <span class="subject-name">${subject.name}</span>
+                        <span class="achievement-rate">${subject.achievement_rate}% 달성</span>
+                    `;
+                    subjectsList.appendChild(li);
+                });
+                
+                matchesContent.innerHTML = '';
+                matchesContent.appendChild(subjectsList);
+            }
+            
+            // 세부내용 달성도 표시
+            const detailsMatchesDiv = document.getElementById('matchingDetails');
+            detailsMatchesDiv.innerHTML = '';
+            
+            if (data.details_matches) {
+                const detailsTable = document.createElement('table');
+                detailsTable.className = 'details-table';
+                detailsTable.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>교과목</th>
+                            <th>세부내용</th>
+                            <th>달성 여부</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${generateDetailsTableRows(data.details_matches)}
+                    </tbody>
+                `;
+                detailsMatchesDiv.appendChild(detailsTable);
+            }
+            
+            // 차트 생성
+            createChart(data.matched_subjects);
+        }
     </script>
 </body>
 </html> 
