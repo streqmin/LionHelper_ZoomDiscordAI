@@ -163,7 +163,7 @@ def format_analysis_result(content):
                             <span class="section-number">{section_number}.1</span>주요 내용
                         </div>
                         <ul>
-                            {format_list_items("\\n".join(parts['주요 내용']))}
+                            {format_list_items('\n'.join(parts['주요 내용']))}
                         </ul>
                     </div>
                 '''
@@ -176,7 +176,7 @@ def format_analysis_result(content):
                             <span class="section-number">{section_number}.2</span>키워드
                         </div>
                         <ul>
-                            {format_list_items("\\n".join(parts['키워드']))}
+                            {format_list_items('\n'.join(parts['키워드']))}
                         </ul>
                     </div>
                 '''
@@ -189,7 +189,7 @@ def format_analysis_result(content):
                             <span class="section-number">{section_number}.3</span>분석
                         </div>
                         <ul>
-                            {format_list_items("\\n".join(parts['분석']))}
+                            {format_list_items('\n'.join(parts['분석']))}
                         </ul>
                     </div>
                 '''
