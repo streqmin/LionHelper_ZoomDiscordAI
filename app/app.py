@@ -7,7 +7,10 @@ import json
 import logging
 import time
 import requests
-import re
+import sys
+
+# 재귀 깊이 제한 증가
+sys.setrecursionlimit(10000)
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -28,28 +31,14 @@ if not api_key:
     raise ValueError("ANTHROPIC_API_KEY 환경 변수가 설정되지 않았습니다.")
 
 def split_content(content, max_length=800):
-    """콘텐츠를 작은 청크로 분할 (재귀 없는 방식)"""
+    """콘텐츠를 작은 청크로 분할 (단순한 방식)"""
     chunks = []
     current_chunk = ""
-    current_length = 0
     
-    # 문장 단위로 분할하지 않고, 단순히 길이 기준으로 분할
-    words = content.split()
-    
-    for word in words:
-        word_length = len(word) + 1  # 공백 포함
-        
-        if current_length + word_length > max_length:
-            if current_chunk:
-                chunks.append(current_chunk.strip())
-                current_chunk = word
-                current_length = word_length
-        else:
-            current_chunk += " " + word if current_chunk else word
-            current_length += word_length
-    
-    if current_chunk:
-        chunks.append(current_chunk.strip())
+    # 단순히 길이 기준으로 분할
+    for i in range(0, len(content), max_length):
+        chunk = content[i:i+max_length]
+        chunks.append(chunk)
     
     return chunks
 
