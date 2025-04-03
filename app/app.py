@@ -55,19 +55,22 @@ def call_claude_api(prompt):
     try:
         logger.info("API 호출 시작")
         
+        # 프롬프트 문자열을 직접 할당하여 재귀 방지
+        prompt_str = str(prompt)
+        
         headers = {
             "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json"
         }
         
-        data = {
-            "prompt": prompt,
-            "model": "claude-instant-1.2",
-            "max_tokens_to_sample": 1500,
-            "temperature": 0.7,
-            "stop_sequences": ["\n\nHuman:"]
-        }
+        data = dict(
+            prompt=prompt_str,
+            model="claude-instant-1.2",
+            max_tokens_to_sample=1500,
+            temperature=0.7,
+            stop_sequences=["\n\nHuman:"]
+        )
         
         response = requests.post(
             "https://api.anthropic.com/v1/complete",
@@ -107,16 +110,21 @@ def analyze_content_in_chunks(content, analysis_type='vtt'):
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    prompt = f"\n\nHuman: 당신은 {'줌 회의록' if analysis_type == 'vtt' else '채팅 로그'} 분석 전문가입니다. "
-                    prompt += f"다음은 전체 {'회의록' if analysis_type == 'vtt' else '채팅'}의 {i}/{total_chunks} 부분입니다. "
-                    prompt += f"이 부분을 분석해주세요:\n\n{chunk}\n\n"
-                    prompt += f"다음 형식으로 분석 결과를 제공해주세요:\n\n"
-                    prompt += f"# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n"
-                    prompt += f"# 주요 키워드\n[이 부분의 주요 키워드들]\n\n"
-                    prompt += f"{'# 중요 포인트' if analysis_type == 'vtt' else '# 대화 분위기'}\n"
-                    prompt += f"[{'이 부분에서 특별히 주목할 만한 내용' if analysis_type == 'vtt' else '이 부분의 대화 톤과 분위기'}]\n\n"
-                    prompt += f"Assistant:"
+                    # 프롬프트 문자열을 미리 생성하여 재귀 방지
+                    prompt_parts = [
+                        "\n\nHuman: ",
+                        f"당신은 {'줌 회의록' if analysis_type == 'vtt' else '채팅 로그'} 분석 전문가입니다. ",
+                        f"다음은 전체 {'회의록' if analysis_type == 'vtt' else '채팅'}의 {i}/{total_chunks} 부분입니다. ",
+                        f"이 부분을 분석해주세요:\n\n{chunk}\n\n",
+                        "다음 형식으로 분석 결과를 제공해주세요:\n\n",
+                        "# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n",
+                        "# 주요 키워드\n[이 부분의 주요 키워드들]\n\n",
+                        f"{'# 중요 포인트' if analysis_type == 'vtt' else '# 대화 분위기'}\n",
+                        f"[{'이 부분에서 특별히 주목할 만한 내용' if analysis_type == 'vtt' else '이 부분의 대화 톤과 분위기'}]\n\n",
+                        "Assistant:"
+                    ]
                     
+                    prompt = "".join(prompt_parts)
                     result = call_claude_api(prompt)
                     all_results.append(result)
                     time.sleep(8)  # API 호출 간격
