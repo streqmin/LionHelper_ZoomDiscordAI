@@ -481,8 +481,16 @@ def format_analysis_result(content):
             '2. 부정적 반응': [],
             '3. 질문/요청사항': []
         },
-        '어려움/불만 상세 분석': [],
-        '개선 제안': [],
+        '어려움/불만 상세 분석': {
+            '1. 학습적 어려움': [],
+            '2. 수업 진행 관련 문제': [],
+            '3. 기술적 문제': []
+        },
+        '개선 제안': {
+            '1. 학습 내용 개선': [],
+            '2. 수업 방식 개선': [],
+            '3. 기술적 지원 강화': []
+        },
         '위험 발언 및 주의사항': [],
         '종합 제언': []
     }
@@ -509,11 +517,13 @@ def format_analysis_result(content):
                 current_subcategory = None
                 continue
                 
-            # 수강생 감정/태도 분석의 하위 카테고리 처리
-            if current_category == '수강생 감정/태도 분석':
-                if line in ['1. 긍정적 반응', '2. 부정적 반응', '3. 질문/요청사항']:
-                    current_subcategory = line
-                    continue
+            # 하위 카테고리가 있는 섹션 처리
+            if current_category in ['수강생 감정/태도 분석', '어려움/불만 상세 분석', '개선 제안']:
+                subcategories = categories[current_category]
+                for subcat in subcategories.keys():
+                    if line.startswith(subcat):
+                        current_subcategory = subcat
+                        break
                 if current_subcategory and line.startswith('- '):
                     # 중복 제거를 위해 이미 있는 항목은 추가하지 않음
                     if line not in categories[current_category][current_subcategory]:
@@ -566,32 +576,50 @@ def format_analysis_result(content):
         html_content.append('</div>')
     
     # 어려움/불만 상세 분석 섹션
-    if categories['어려움/불만 상세 분석']:
+    if any(categories['어려움/불만 상세 분석'].values()):
         html_content.extend([
             '<div class="category-section">',
-            '    <h2 class="category-title">어려움/불만 상세 분석</h2>',
-            '    <ul class="analysis-list">'
+            '    <h2 class="category-title">어려움/불만 상세 분석</h2>'
         ])
-        for item in categories['어려움/불만 상세 분석']:
-            html_content.append(f'        <li>{item}</li>')
-        html_content.extend([
-            '    </ul>',
-            '</div>'
-        ])
+        
+        for subcategory, items in categories['어려움/불만 상세 분석'].items():
+            if items:  # 해당 하위 카테고리에 내용이 있는 경우에만 표시
+                html_content.extend([
+                    f'    <div class="subsection">',
+                    f'        <h3 class="subsection-title">{subcategory}</h3>',
+                    f'        <ul class="analysis-list">'
+                ])
+                for item in items:
+                    html_content.append(f'            <li>{item[2:]}</li>')  # '- ' 제거
+                html_content.extend([
+                    '        </ul>',
+                    '    </div>'
+                ])
+        
+        html_content.append('</div>')
 
     # 개선 제안 섹션
-    if categories['개선 제안']:
+    if any(categories['개선 제안'].values()):
         html_content.extend([
             '<div class="category-section">',
-            '    <h2 class="category-title">개선 제안</h2>',
-            '    <ul class="analysis-list">'
+            '    <h2 class="category-title">개선 제안</h2>'
         ])
-        for item in categories['개선 제안']:
-            html_content.append(f'        <li>{item}</li>')
-        html_content.extend([
-            '    </ul>',
-            '</div>'
-        ])
+        
+        for subcategory, items in categories['개선 제안'].items():
+            if items:  # 해당 하위 카테고리에 내용이 있는 경우에만 표시
+                html_content.extend([
+                    f'    <div class="subsection">',
+                    f'        <h3 class="subsection-title">{subcategory}</h3>',
+                    f'        <ul class="analysis-list">'
+                ])
+                for item in items:
+                    html_content.append(f'            <li>{item[2:]}</li>')  # '- ' 제거
+                html_content.extend([
+                    '        </ul>',
+                    '    </div>'
+                ])
+        
+        html_content.append('</div>')
 
     # 위험 발언 및 주의사항 섹션
     risk_items = []
