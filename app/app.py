@@ -476,6 +476,14 @@ def format_vtt_analysis(content):
     # HTML 생성
     html_content = ['<div class="analysis-result">']
     
+    # 각 섹션의 내용을 저장할 딕셔너리
+    vtt_sections = {
+        '주요 내용': [],
+        '키워드': [],
+        '분석': [],
+        '위험 발언': []
+    }
+    
     # 각 섹션 처리
     for section in sections:
         if not section.strip():
@@ -497,42 +505,67 @@ def format_vtt_analysis(content):
                 continue
             
             # VTT 분석 결과 처리
-            if current_category == '주요 내용':
-                html_content.extend([
-                    '<div class="category-section">',
-                    '    <h2 class="category-title">주요 내용</h2>',
-                    '    <div class="main-topics">',
-                    f'        <p>{line}</p>',
-                    '    </div>',
-                    '</div>'
-                ])
-            elif current_category == '키워드':
-                html_content.extend([
-                    '<div class="category-section">',
-                    '    <h2 class="category-title">키워드</h2>',
-                    '    <div class="main-topics">',
-                    f'        <p>{line}</p>',
-                    '    </div>',
-                    '</div>'
-                ])
-            elif current_category == '분석':
-                html_content.extend([
-                    '<div class="category-section">',
-                    '    <h2 class="category-title">분석</h2>',
-                    '    <div class="main-topics">',
-                    f'        <p>{line}</p>',
-                    '    </div>',
-                    '</div>'
-                ])
-            elif current_category == '위험 발언':
-                html_content.extend([
-                    '<div class="category-section">',
-                    '    <h2 class="category-title">위험 발언</h2>',
-                    '    <div class="main-topics">',
-                    f'        <p>{line}</p>',
-                    '    </div>',
-                    '</div>'
-                ])
+            if current_category in vtt_sections:
+                if line.startswith('- '):
+                    vtt_sections[current_category].append(line[2:].strip())
+                else:
+                    vtt_sections[current_category].append(line.strip())
+    
+    # 주요 내용 섹션
+    if vtt_sections['주요 내용']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">주요 내용</h2>',
+            '    <div class="main-topics">',
+            f'        <p>{". ".join(vtt_sections["주요 내용"])}</p>',
+            '    </div>',
+            '</div>'
+        ])
+    
+    # 키워드 섹션
+    if vtt_sections['키워드']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">키워드</h2>',
+            '    <div class="main-topics">',
+            '        <ul class="keyword-list">'
+        ])
+        for keyword in vtt_sections['키워드']:
+            html_content.append(f'            <li>{keyword}</li>')
+        html_content.extend([
+            '        </ul>',
+            '    </div>',
+            '</div>'
+        ])
+    
+    # 분석 섹션
+    if vtt_sections['분석']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">분석</h2>',
+            '    <div class="main-topics">',
+            f'        <p>{". ".join(vtt_sections["분석"])}</p>',
+            '    </div>',
+            '</div>'
+        ])
+    
+    # 위험 발언 섹션
+    if vtt_sections['위험 발언']:
+        html_content.extend([
+            '<div class="category-section risk-section">',
+            '    <h2 class="category-title">위험 발언</h2>',
+            '    <div class="risk-summary">',
+            '        <div class="risk-icon">⚠️</div>',
+            '        <p>다음과 같은 위험 발언이 감지되었습니다.</p>',
+            '    </div>',
+            '    <ul class="risk-list">'
+        ])
+        for risk in vtt_sections['위험 발언']:
+            html_content.append(f'        <li>{risk}</li>')
+        html_content.extend([
+            '    </ul>',
+            '</div>'
+        ])
     
     html_content.append('</div>')
     return '\n'.join(html_content)
