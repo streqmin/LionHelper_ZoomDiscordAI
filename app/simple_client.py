@@ -1,7 +1,8 @@
 import os
 import logging
 import time
-import requests
+import json
+import urllib3
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,7 @@ class SimpleAPIClient:
             "anthropic-version": "2023-06-01",
             "content-type": "application/json"
         }
+        self.http = urllib3.PoolManager(retries=False)
         logger.info("SimpleAPIClient 초기화 완료")
 
     def make_request(self, prompt: str) -> Optional[str]:
@@ -29,18 +31,35 @@ class SimpleAPIClient:
         
         try:
             logger.info("API 요청 시작")
-            response = requests.post(
+            encoded_data = json.dumps(data).encode('utf-8')
+            
+            response = self.http.request(
+                'POST',
                 self.base_url,
+                body=encoded_data,
                 headers=self.headers,
-                json=data,
-                timeout=30
+                timeout=30.0
             )
-            response.raise_for_status()
-            result = response.json().get('completion', '')
-            logger.info(f"API 요청 성공: {len(result)} 문자 응답")
-            return result
-        except requests.exceptions.RequestException as e:
-            logger.error(f"API 요청 실패 (네트워크/HTTP 오류): {str(e)}")
+            
+            if response.status != 200:
+                logger.error(f"API 요청 실패: HTTP {response.status}")
+                return None
+                
+            response_data = json.loads(response.data.decode('utf-8'))
+            result = response_data.get('completion', '')
+            
+            if result:
+                logger.info(f"API 요청 성공: {len(result)} 문자 응답")
+                return result
+            else:
+                logger.error("API 응답에 completion 필드가 없음")
+                return None
+                
+        except urllib3.exceptions.HTTPError as e:
+            logger.error(f"API 요청 실패 (HTTP 오류): {str(e)}")
+            return None
+        except json.JSONDecodeError as e:
+            logger.error(f"API 응답 JSON 파싱 실패: {str(e)}")
             return None
         except Exception as e:
             logger.error(f"API 요청 실패 (예상치 못한 오류): {str(e)}")
