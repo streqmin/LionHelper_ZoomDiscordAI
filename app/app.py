@@ -5,7 +5,7 @@ from app.config import Config
 from datetime import datetime
 import json
 import logging
-from simple_client import SimpleAPIClient
+from .simple_client import SimpleAPIClient
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
