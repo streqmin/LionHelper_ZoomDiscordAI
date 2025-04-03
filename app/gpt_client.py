@@ -10,45 +10,41 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 logger = logging.getLogger(__name__)
 
 class GPTAPIClient:
-    def __init__(self, api_key: str):
-        """GPT API 클라이언트 초기화"""
-        if not api_key:
-            raise ValueError("API 키가 제공되지 않았습니다.")
-            
-        self.client = OpenAI(api_key=api_key)
+    def __init__(self, api_key):
+        self.logger = logging.getLogger(__name__)
         self.model = "gpt-3.5-turbo"
-        logger.info(f"GPTAPIClient 초기화 완료 (모델: {self.model})")
+        self.client = OpenAI(api_key=api_key)
+        self.logger.info(f"GPTAPIClient 초기화 완료 (모델: {self.model})")
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
         reraise=True
     )
-    def make_request(self, prompt: str, max_tokens: int = 1000) -> Optional[str]:
+    def make_request(self, prompt: str, max_tokens: int = 2000) -> Optional[str]:
         """GPT API 요청 수행"""
+        self.logger.info(f"API 요청 시작 (프롬프트 길이: {len(prompt)} 문자)")
+        
         try:
-            logger.info(f"API 요청 시작 (프롬프트 길이: {len(prompt)} 문자)")
-            
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "당신은 텍스트 분석 전문가입니다. 주어진 텍스트를 분석하고 핵심 내용, 키워드, 상세 분석을 제공합니다."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
                 max_tokens=max_tokens
             )
             
-            if not response.choices:
-                logger.error("API 응답에 내용이 없음")
-                return None
+            if response and response.choices:
+                result = response.choices[0].message.content
+                self.logger.info("API 요청 성공")
+                return result
+            else:
+                self.logger.error("API 응답이 비어있음")
+                raise Exception("API 응답이 비어있습니다")
                 
-            result = response.choices[0].message.content
-            logger.info(f"API 요청 성공 (응답 길이: {len(result)} 문자)")
-            return result
-            
         except Exception as e:
-            logger.error(f"API 요청 실패: {str(e)}")
+            self.logger.error(f"API 요청 실패: {str(e)}")
             raise
 
     def split_text(self, text: str, max_chunk_size: int = 2000) -> List[str]:
