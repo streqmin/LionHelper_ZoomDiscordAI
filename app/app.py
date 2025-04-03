@@ -7,6 +7,7 @@ import json
 import logging
 import time
 from anthropic import Anthropic
+import httpx
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -26,8 +27,15 @@ api_key = os.getenv('ANTHROPIC_API_KEY')
 if not api_key:
     raise ValueError("ANTHROPIC_API_KEY 환경 변수가 설정되지 않았습니다.")
 
-# Anthropic 클라이언트 초기화
-anthropic = Anthropic(api_key=api_key)
+# Anthropic 클라이언트 초기화 (타임아웃 설정 추가)
+anthropic = Anthropic(
+    api_key=api_key,
+    http_client=httpx.Client(
+        timeout=httpx.Timeout(60.0, connect=30.0),
+        limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+        transport=httpx.HTTPTransport(retries=3)
+    )
+)
 
 def split_content(content, max_length=800):
     """콘텐츠를 작은 청크로 분할"""
@@ -55,18 +63,27 @@ def split_content(content, max_length=800):
 
 def call_claude_api(prompt):
     """Claude API 호출"""
-    try:
-        completion = anthropic.completions.create(
-            model="claude-instant-1.2",
-            max_tokens_to_sample=1500,
-            temperature=0.7,
-            prompt=prompt
-        )
-        return completion.completion
-        
-    except Exception as e:
-        logger.error(f"API 호출 실패: {str(e)}")
-        raise
+    max_retries = 3
+    retry_delay = 5
+    
+    for attempt in range(max_retries):
+        try:
+            completion = anthropic.completions.create(
+                model="claude-instant-1.2",
+                max_tokens_to_sample=1500,
+                temperature=0.7,
+                prompt=prompt,
+                timeout=60  # 타임아웃 60초
+            )
+            return completion.completion
+            
+        except Exception as e:
+            logger.error(f"API 호출 실패 (시도 {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                retry_delay *= 2  # 지수 백오프
+            else:
+                raise
 
 def analyze_content_in_chunks(content, analysis_type='vtt'):
     """청크 단위로 콘텐츠 분석"""
@@ -92,12 +109,12 @@ def analyze_content_in_chunks(content, analysis_type='vtt'):
                 
                 result = call_claude_api(prompt)
                 all_results.append(result)
-                time.sleep(3)  # API 호출 간격
+                time.sleep(5)  # API 호출 간격
                 
             except Exception as e:
                 logger.error(f"Failed to process chunk {i}: {str(e)}")
                 all_results.append(f"[이 부분 처리 중 오류 발생: {str(e)}]")
-                time.sleep(5)  # 오류 발생 시 대기 시간
+                time.sleep(10)  # 오류 발생 시 대기 시간 증가
         
         if not all_results:
             return "분석에 실패했습니다. 네트워크 연결을 확인해주세요."
