@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file, render_template, send_from_directory
 from werkzeug.utils import secure_filename
 from app.config import Config
 from anthropic import Anthropic
@@ -10,6 +10,7 @@ import time
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 import socket
+import asyncio
 
 # 글로벌 타임아웃 설정
 socket.setdefaulttimeout(60)
@@ -252,6 +253,10 @@ def get_result(filename):
     if os.path.exists(result_file):
         return send_file(result_file, as_attachment=True)
     return jsonify({'error': '결과 파일을 찾을 수 없습니다.'}), 404
+
+@app.route('/download/<filename>')
+def download_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 if __name__ == '__main__':
     app.run(debug=True) 
