@@ -22,24 +22,30 @@ class ClaudeAPIClient:
         if not text:
             return []
         
-        chunks = []
-        current_chunk = ""
+        # 정규식으로 문장 분할
         sentences = re.split(r'(?<=[.!?])\s+', text)
+        chunks = []
+        current_chunk = []
+        current_length = 0
         
         for sentence in sentences:
-            # 마지막 문장이면 마침표를 추가하지 않음
-            is_last_sentence = sentence == sentences[-1]
-            sentence_with_dot = sentence + ('. ' if not is_last_sentence else '')
+            sentence_length = len(sentence)
             
-            if len(current_chunk) + len(sentence_with_dot) < max_length:
-                current_chunk += sentence_with_dot
+            # 현재 청크에 문장을 추가할 수 있는 경우
+            if current_length + sentence_length <= max_length:
+                current_chunk.append(sentence)
+                current_length += sentence_length
             else:
+                # 현재 청크가 비어있지 않으면 저장
                 if current_chunk:
-                    chunks.append(current_chunk.strip())
-                current_chunk = sentence_with_dot
+                    chunks.append(' '.join(current_chunk))
+                # 새로운 청크 시작
+                current_chunk = [sentence]
+                current_length = sentence_length
         
+        # 마지막 청크 처리
         if current_chunk:
-            chunks.append(current_chunk.strip())
+            chunks.append(' '.join(current_chunk))
         
         return chunks
 
@@ -67,7 +73,7 @@ class ClaudeAPIClient:
                 return response.json()['completion']
             except requests.exceptions.RequestException as e:
                 error_detail = f"HTTP 에러: {str(e)}"
-                if hasattr(e.response, 'text'):
+                if hasattr(e, 'response') and e.response is not None:
                     error_detail += f" - 응답: {e.response.text}"
                 logger.error(f"API 호출 실패 (시도 {attempt + 1}/{max_retries}): {error_detail}")
                 if attempt < max_retries - 1:
@@ -98,17 +104,26 @@ class ClaudeAPIClient:
             for i, chunk in enumerate(chunks, 1):
                 logger.info(f"Processing chunk {i}/{total_chunks}")
                 
-                prompt = f"\n\nHuman: 당신은 {'줌 회의록' if analysis_type == 'vtt' else '채팅 로그'} 분석 전문가입니다. "
-                prompt += f"다음은 전체 {'회의록' if analysis_type == 'vtt' else '채팅'}의 {i}/{total_chunks} 부분입니다.\n\n"
-                prompt += f"{chunk}\n\n"
-                prompt += "다음 형식으로 분석 결과를 제공해주세요:\n\n"
-                prompt += "# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n"
-                prompt += "# 주요 키워드\n[이 부분의 주요 키워드들]\n\n"
-                prompt += f"{'# 중요 포인트' if analysis_type == 'vtt' else '# 대화 분위기'}\n"
-                prompt += f"[{'이 부분에서 특별히 주목할 만한 내용' if analysis_type == 'vtt' else '이 부분의 대화 톤과 분위기'}]\n\n"
-                prompt += "Assistant:"
+                # 프롬프트 생성
+                prompt_parts = [
+                    "\n\nHuman: 당신은 ",
+                    "줌 회의록" if analysis_type == 'vtt' else "채팅 로그",
+                    " 분석 전문가입니다. ",
+                    f"다음은 전체 {'회의록' if analysis_type == 'vtt' else '채팅'}의 {i}/{total_chunks} 부분입니다.\n\n",
+                    f"{chunk}\n\n",
+                    "다음 형식으로 분석 결과를 제공해주세요:\n\n",
+                    "# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n",
+                    "# 주요 키워드\n[이 부분의 주요 키워드들]\n\n",
+                    "# 중요 포인트" if analysis_type == 'vtt' else "# 대화 분위기",
+                    "\n[",
+                    "이 부분에서 특별히 주목할 만한 내용" if analysis_type == 'vtt' else "이 부분의 대화 톤과 분위기",
+                    "]\n\n",
+                    "Assistant:"
+                ]
                 
+                prompt = ''.join(prompt_parts)
                 result = self.call_api(prompt)
+                
                 if result:
                     results.append(result)
                     time.sleep(8)
