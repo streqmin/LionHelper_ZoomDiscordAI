@@ -1,10 +1,13 @@
 import os
 import logging
 import re
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, Response
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from app.gpt_client import GPTAPIClient
+import json
+import queue
+import threading
 
 # 환경 변수 로드
 load_dotenv()
@@ -40,6 +43,9 @@ except Exception as e:
     logger.error(f"API 클라이언트 초기화 실패: {str(e)}")
     raise
 
+# 분석 진행 상황을 저장할 전역 큐
+progress_queue = queue.Queue()
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
@@ -54,6 +60,17 @@ def vtt_analysis():
 @app.route('/chat_analysis')
 def chat_analysis():
     return render_template('chat_analysis.html')
+
+@app.route('/analysis-progress')
+def analysis_progress():
+    def generate():
+        while True:
+            try:
+                progress = progress_queue.get(timeout=30)  # 30초 타임아웃
+                yield f"data: {json.dumps(progress)}\n\n"
+            except queue.Empty:
+                break
+    return Response(generate(), mimetype='text/event-stream')
 
 @app.route('/analyze', methods=['POST'])
 @app.route('/analyze_chat', methods=['POST'])
@@ -152,23 +169,40 @@ def process_curriculum_file(filepath):
 
 def analyze_curriculum_match(vtt_result, curriculum_content):
     """VTT 분석 결과와 커리큘럼을 매칭하여 분석"""
-    # TODO: 실제 매칭 로직 구현
-    return {
-        'summary': '커리큘럼 매칭 분석 결과입니다.',
-        'matched_subjects': [
-            {'name': '과목 1', 'achievement_rate': 80},
-            {'name': '과목 2', 'achievement_rate': 60}
-        ],
-        'details_matches': {
-            '과목 1': {
-                'matches': [True, False],
-                'detail_texts': ['세부내용 1', '세부내용 2']
-            },
-            '과목 2': {
-                'matches': [True],
-                'detail_texts': ['세부내용 1']
-            }
+    # 커리큘럼에서 과목명 추출
+    subjects = []
+    for item in curriculum_content:
+        if 'subject' in item:  # JSON 형식
+            subjects.append(item['subject'])
+        elif '과목명' in item:  # 엑셀 형식
+            subjects.append(item['과목명'])
+    
+    # 중복 제거 및 정렬
+    subjects = sorted(list(set(subjects)))
+    
+    # 각 과목별 매칭 분석
+    matched_subjects = []
+    details_matches = {}
+    
+    for subject in subjects:
+        # 실제 매칭 로직은 여기에 구현
+        # 임시로 랜덤한 달성도 생성
+        import random
+        achievement_rate = random.randint(60, 100)
+        
+        matched_subjects.append({
+            'name': subject,
+            'achievement_rate': achievement_rate
+        })
+        
+        details_matches[subject] = {
+            'matches': [True, False],  # 실제 매칭 결과로 대체 필요
+            'detail_texts': [f'{subject}의 세부내용 1', f'{subject}의 세부내용 2']
         }
+    
+    return {
+        'matched_subjects': matched_subjects,
+        'details_matches': details_matches
     }
 
 def summarize_content(content_list, max_length=800):
@@ -348,6 +382,136 @@ def format_list_items(content):
         elif line:  # 일반 텍스트인 경우
             items.append(f'<li>{line}</li>')
     return '\n'.join(items)
+
+def update_progress(message):
+    """분석 진행 상황을 큐에 추가"""
+    progress_queue.put({'message': message})
+
+@app.route('/analyze_vtt', methods=['POST'])
+def analyze_vtt():
+    try:
+        logger.info("VTT 분석 요청 수신")
+        
+        # 파일 처리 및 검증
+        if 'vtt_file' not in request.files or 'curriculum_file' not in request.files:
+            return jsonify({'error': '필요한 파일이 누락되었습니다.'}), 400
+            
+        vtt_file = request.files['vtt_file']
+        curriculum_file = request.files['curriculum_file']
+        
+        if vtt_file.filename == '' or curriculum_file.filename == '':
+            return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
+            
+        # 파일 저장
+        vtt_filename = secure_filename(vtt_file.filename)
+        curriculum_filename = secure_filename(curriculum_file.filename)
+        
+        vtt_filepath = os.path.join(app.config['UPLOAD_FOLDER'], vtt_filename)
+        curriculum_filepath = os.path.join(app.config['UPLOAD_FOLDER'], curriculum_filename)
+        
+        vtt_file.save(vtt_filepath)
+        curriculum_file.save(curriculum_filepath)
+        
+        try:
+            # VTT 파일 내용 읽기
+            with open(vtt_filepath, 'r', encoding='utf-8') as f:
+                vtt_content = f.read()
+            
+            # VTT 내용을 청크로 분할
+            chunks = split_vtt_content(vtt_content)
+            total_chunks = len(chunks)
+            
+            # 각 청크 분석
+            analyzed_chunks = []
+            for i, chunk in enumerate(chunks, 1):
+                update_progress(f"청크 {i}/{total_chunks} 분석 중")
+                chunk_result = api_client.analyze_text(chunk, 'vtt')
+                analyzed_chunks.append(chunk_result)
+            
+            update_progress("커리큘럼 매칭 분석 중")
+            # 커리큘럼 파일 처리
+            curriculum_content = process_curriculum_file(curriculum_filepath)
+            
+            # 분석 결과 통합 및 매칭
+            combined_result = combine_analysis_results(analyzed_chunks)
+            curriculum_result = analyze_curriculum_match(combined_result, curriculum_content)
+            
+            # 결과를 HTML 형식으로 변환
+            vtt_html = format_analysis_result(combined_result)
+            
+            return jsonify({
+                'vtt_result': vtt_html,
+                'curriculum_result': curriculum_result
+            })
+            
+        finally:
+            # 임시 파일 삭제
+            try:
+                os.remove(vtt_filepath)
+                os.remove(curriculum_filepath)
+            except Exception as e:
+                logger.warning(f"임시 파일 삭제 실패: {str(e)}")
+                
+    except Exception as e:
+        logger.error(f"분석 중 오류 발생: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+def split_vtt_content(content, chunk_size=5000):
+    """VTT 내용을 청크로 분할"""
+    words = content.split()
+    chunks = []
+    current_chunk = []
+    current_size = 0
+    
+    for word in words:
+        word_size = len(word) + 1  # 공백 포함
+        if current_size + word_size > chunk_size and current_chunk:
+            chunks.append(' '.join(current_chunk))
+            current_chunk = [word]
+            current_size = word_size
+        else:
+            current_chunk.append(word)
+            current_size += word_size
+    
+    if current_chunk:
+        chunks.append(' '.join(current_chunk))
+    
+    return chunks
+
+def combine_analysis_results(results):
+    """여러 청크의 분석 결과를 하나로 통합"""
+    combined = {
+        '주요 내용': [],
+        '키워드': set(),
+        '분석': [],
+        '위험 발언': []
+    }
+    
+    for result in results:
+        sections = result.split('---')
+        current_category = None
+        
+        for section in sections:
+            lines = section.strip().split('\n')
+            for line in lines:
+                line = line.strip()
+                if line.startswith('# '):
+                    current_category = line[2:].strip()
+                    continue
+                if line and current_category in combined:
+                    if current_category == '키워드':
+                        combined[current_category].update(line.split(', '))
+                    else:
+                        combined[current_category].append(line)
+    
+    # 키워드를 리스트로 변환하고 정렬
+    combined['키워드'] = sorted(list(combined['키워드']))
+    
+    # 결과를 문자열로 변환
+    return '\n---\n'.join([
+        f"# {category}\n" + '\n'.join(items if isinstance(items, list) else [items])
+        for category, items in combined.items()
+    ])
 
 if __name__ == '__main__':
     app.run(debug=True) 

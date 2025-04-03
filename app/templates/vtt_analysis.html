@@ -310,9 +310,12 @@
             </form>
         </div>
 
-        <div id="loadingSpinner" class="loading-spinner" style="display: none;">
-            <div class="spinner"></div>
-            <p>분석 중입니다. 잠시만 기다려주세요...</p>
+        <div id="loading" style="display: none;" class="text-center my-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">분석 중입니다. 잠시만 기다려 주세요.</p>
+            <p id="analysis-progress" class="text-muted small"></p>
         </div>
 
         <!-- VTT 분석 결과 -->
@@ -354,7 +357,7 @@
             
             const vttFileInput = document.getElementById('vttFile');
             const curriculumFileInput = document.getElementById('curriculumFile');
-            const loadingSpinner = document.getElementById('loadingSpinner');
+            const loadingDiv = document.getElementById('loading');
             const vttResultContainer = document.getElementById('vttResultContainer');
             const curriculumResultContainer = document.getElementById('curriculumResultContainer');
             
@@ -368,26 +371,34 @@
             formData.append('curriculum_file', curriculumFileInput.files[0]);
 
             try {
-                loadingSpinner.style.display = 'block';
+                // 로딩 표시 시작
+                loadingDiv.style.display = 'block';
                 vttResultContainer.style.display = 'none';
                 curriculumResultContainer.style.display = 'none';
-
+                
+                // 분석 진행 상황 업데이트를 위한 EventSource 연결
+                const eventSource = new EventSource('/analysis-progress');
+                eventSource.onmessage = function(event) {
+                    const progress = JSON.parse(event.data);
+                    document.getElementById('analysis-progress').textContent = `${progress.message}`;
+                };
+                
+                // 파일 업로드 및 분석 요청
                 const response = await fetch('/analyze_vtt', {
                     method: 'POST',
                     body: formData
                 });
-
+                
+                // EventSource 연결 종료
+                eventSource.close();
+                
                 if (!response.ok) {
                     throw new Error('분석 중 오류가 발생했습니다.');
                 }
-
+                
                 const data = await response.json();
                 
-                if (data.error) {
-                    throw new Error(data.error);
-                }
-
-                // VTT 분석 결과 표시
+                // 분석 결과 표시
                 if (data.vtt_result) {
                     document.getElementById('vttAnalysis').innerHTML = data.vtt_result;
                     vttResultContainer.style.display = 'block';
@@ -401,11 +412,10 @@
 
                 // 결과가 표시된 후 스크롤
                 vttResultContainer.scrollIntoView({ behavior: 'smooth' });
-                
             } catch (error) {
                 alert(error.message);
             } finally {
-                loadingSpinner.style.display = 'none';
+                loadingDiv.style.display = 'none';
             }
         });
 
