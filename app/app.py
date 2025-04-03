@@ -2,23 +2,12 @@ import os
 from flask import Flask, request, jsonify, send_file, render_template, send_from_directory
 from werkzeug.utils import secure_filename
 from app.config import Config
-from anthropic import Anthropic
 from datetime import datetime
 import json
 import logging
 import time
-import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
-import socket
-import asyncio
-import anthropic
-import re
 import requests
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
-
-# 글로벌 타임아웃 설정
-socket.setdefaulttimeout(60)
+import re
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -38,18 +27,7 @@ api_key = os.getenv('ANTHROPIC_API_KEY')
 if not api_key:
     raise ValueError("ANTHROPIC_API_KEY 환경 변수가 설정되지 않았습니다.")
 
-# requests 세션 설정
-session = requests.Session()
-retry_strategy = Retry(
-    total=3,  # 재시도 횟수 감소
-    backoff_factor=1,  # 백오프 팩터 감소
-    status_forcelist=[429, 500, 502, 503, 504],
-)
-adapter = HTTPAdapter(max_retries=retry_strategy)
-session.mount("http://", adapter)
-session.mount("https://", adapter)
-
-def split_content(content, max_length=800):  # 청크 크기 축소
+def split_content(content, max_length=800):
     """콘텐츠를 작은 청크로 분할"""
     chunks = []
     current_chunk = []
@@ -74,22 +52,22 @@ def split_content(content, max_length=800):  # 청크 크기 축소
 
 def call_claude_api(prompt):
     """Claude API 직접 호출"""
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+    }
+    
+    data = {
+        "prompt": prompt,
+        "model": "claude-instant-1.2",
+        "max_tokens_to_sample": 1500,
+        "temperature": 0.7,
+        "stop_sequences": ["\n\nHuman:"]
+    }
+    
     try:
-        headers = {
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json"
-        }
-        
-        data = {
-            "prompt": prompt,
-            "model": "claude-instant-1.2",
-            "max_tokens_to_sample": 1500,
-            "temperature": 0.7,
-            "stop_sequences": ["\n\nHuman:"]
-        }
-        
-        response = session.post(
+        response = requests.post(
             "https://api.anthropic.com/v1/complete",
             headers=headers,
             json=data,
@@ -129,12 +107,12 @@ def analyze_content_in_chunks(content, analysis_type='vtt'):
                 f"Assistant:"
             )
             all_results.append(result['completion'])
-            time.sleep(5)  # API 호출 간격 증가
+            time.sleep(5)  # API 호출 간격
             
         except Exception as e:
             logger.error(f"Failed to process chunk {i}: {str(e)}")
             all_results.append(f"[이 부분 처리 중 오류 발생: {str(e)}]")
-            time.sleep(10)  # 오류 발생 시 대기 시간 증가
+            time.sleep(10)  # 오류 발생 시 대기 시간
     
     if not all_results:
         return "분석에 실패했습니다. 네트워크 연결을 확인해주세요."
