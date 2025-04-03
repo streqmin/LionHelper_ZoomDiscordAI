@@ -153,6 +153,62 @@ def analyze():
         logger.error(f"요청 처리 중 예상치 못한 오류 발생: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/analyze_chat', methods=['POST'])
+def analyze_chat():
+    try:
+        logger.info("채팅 분석 요청 수신")
+        logger.info(f"요청 URL: {request.url}")
+        logger.info(f"Content-Type: {request.content_type}")
+        logger.info(f"Form data: {request.form}")
+        logger.info(f"Files: {request.files}")
+        
+        # 채팅 파일 확인
+        if 'file' not in request.files:
+            logger.error("채팅 파일이 요청에 포함되지 않음")
+            return jsonify({'error': '채팅 파일이 없습니다'}), 400
+            
+        chat_file = request.files['file']
+        if chat_file.filename == '':
+            logger.error("채팅 파일명이 비어있음")
+            return jsonify({'error': '채팅 파일이 선택되지 않았습니다'}), 400
+
+        # 채팅 파일 처리
+        chat_filename = secure_filename(chat_file.filename)
+        chat_filepath = os.path.join(app.config['UPLOAD_FOLDER'], chat_filename)
+        chat_file.save(chat_filepath)
+        logger.info(f"채팅 파일 저장 완료: {chat_filepath}")
+        
+        try:
+            # 채팅 파일 내용 읽기
+            with open(chat_filepath, 'r', encoding='utf-8') as f:
+                chat_content = f.read()
+            logger.info(f"채팅 파일 내용 읽기 성공 (길이: {len(chat_content)} 문자)")
+            
+            # API를 통한 분석
+            chat_result = api_client.analyze_text(chat_content, 'chat')
+            logger.info("채팅 분석 완료")
+            
+            # 결과를 HTML 형식으로 변환
+            chat_html = format_analysis_result(chat_result)
+            return jsonify({
+                'chat_result': chat_html
+            })
+            
+        except Exception as e:
+            logger.error(f"처리 중 오류 발생: {str(e)}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            # 임시 파일 삭제
+            try:
+                os.remove(chat_filepath)
+                logger.info("임시 파일 삭제 완료")
+            except Exception as e:
+                logger.warning(f"임시 파일 삭제 실패: {str(e)}")
+                
+    except Exception as e:
+        logger.error(f"요청 처리 중 예상치 못한 오류 발생: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 def process_curriculum_file(filepath):
     """커리큘럼 파일(엑셀 또는 JSON)을 처리하여 내용을 반환"""
     ext = filepath.rsplit('.', 1)[1].lower()
