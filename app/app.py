@@ -11,6 +11,8 @@ import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 import socket
 import asyncio
+import anthropic
+import re
 
 # 글로벌 타임아웃 설정
 socket.setdefaulttimeout(60)
@@ -21,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config.from_object(Config)
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB 제한
 
 # Anthropic 클라이언트 초기화
 api_key = os.getenv('ANTHROPIC_API_KEY')
@@ -35,15 +39,24 @@ http_client = httpx.Client(
     verify=True
 )
 
-# 클라이언트 설정
-client = Anthropic(
+# Anthropic 클라이언트 초기화
+client = anthropic.Anthropic(
     api_key=api_key,
     http_client=http_client
 )
 logger.info("Anthropic client initialized successfully")
 
-# 업로드 폴더 생성
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+# 비동기 Anthropic 클라이언트 초기화
+async_client = None
+
+def init_async_client():
+    global async_client
+    if async_client is None:
+        async_client = anthropic.AsyncAnthropic(api_key=api_key)
+
+@app.before_first_request
+def before_first_request():
+    init_async_client()
 
 def split_content(content, max_length=1000):  # 청크 크기를 1000자로 감소
     """콘텐츠를 작은 청크로 분할"""
@@ -74,7 +87,7 @@ def split_content(content, max_length=1000):  # 청크 크기를 1000자로 감�
 def call_claude_api(prompt):
     """Claude API 호출 함수 with 재시도 로직"""
     try:
-        completion = client.completions.create(
+        completion = http_client.completions.create(
             prompt=prompt,
             model="claude-instant-1.2",  # Claude Instant 모델로 변경
             max_tokens_to_sample=1500,  # 토큰 수 감소
