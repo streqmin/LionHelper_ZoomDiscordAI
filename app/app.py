@@ -168,6 +168,9 @@ def process_curriculum_file(filepath):
             current_subject = None
             current_details = []
             
+            # 첫 번째 행이 헤더인지 확인하고 제외할 키워드 목록
+            header_keywords = ['교과목명', '과목명', '교과목', '과목', 'subject']
+            
             # 모든 행을 순회하면서 과목명과 세부내용 추출
             for _, row in df.iterrows():
                 # 각 행의 모든 셀을 문자열로 변환하고 빈 셀 제거
@@ -178,6 +181,10 @@ def process_curriculum_file(filepath):
                 # 첫 번째 열이 비어있지 않은 경우, 새로운 과목으로 간주
                 first_cell = str(row[0]).strip()
                 if first_cell != 'nan' and first_cell:
+                    # 헤더로 의심되는 행은 건너뛰기
+                    if any(keyword.lower() in first_cell.lower() for keyword in header_keywords):
+                        continue
+                        
                     # 이전 과목의 정보가 있으면 저장
                     if current_subject and current_details:
                         result.append({
@@ -306,8 +313,10 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
 다음 형식으로 응답해주세요:
 1. 달성도 (0-100): 
    - 이 강의가 해당 세부내용을 얼마나 다루었는지를 백분율로 표현
-   - 직접적인 설명이 있으면 높은 점수
-   - 관련 개념이나 응용사례만 다룬 경우 중간 점수
+   - 직접적인 설명이 있으면 80-100점
+   - 관련 개념이나 응용사례를 다룬 경우 60-80점
+   - 간접적으로 연관된 내용을 다룬 경우 40-60점
+   - 약간의 관련성만 있는 경우 20-40점
    - 전혀 다루지 않은 경우 0점
 
 2. 판단 근거:
@@ -316,7 +325,8 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
 
 주의사항:
 - 형식적인 단어 매칭이 아닌 실질적인 내용의 연관성을 평가해주세요
-- 세부내용의 핵심 개념이나 목표가 강의에서 다뤄졌는지를 중점적으로 판단해주세요
+- 세부내용의 핵심 개념이나 목표가 강의에서 조금이라도 다뤄졌다면 관대하게 평가해주세요
+- 직접적인 설명이 아니더라도, 관련 개념이나 응용 사례가 포함되어 있다면 점수를 부여해주세요
 """
             
             try:
@@ -336,7 +346,7 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
                 
                 # 세부내용 매칭 결과 저장
                 matched_details.append(detail_str)
-                matches_status.append(detail_score >= 50)  # 50% 이상이면 달성으로 판단
+                matches_status.append(detail_score >= 40)  # 40% 이상이면 달성으로 판단 (기준 완화)
                 total_score += detail_score
                 
             except Exception as e:
