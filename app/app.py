@@ -317,16 +317,19 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
    - 관련 개념이나 응용사례를 다룬 경우 60-80점
    - 간접적으로 연관된 내용을 다룬 경우 40-60점
    - 약간의 관련성만 있는 경우 20-40점
+   - 매우 간접적이거나 미미한 관련성이 있는 경우 10-20점
    - 전혀 다루지 않은 경우 0점
 
 2. 판단 근거:
    - 강의 내용 중 이 세부내용과 관련된 부분을 구체적으로 설명
    - 직접적인 언급이 없더라도 연관된 개념이나 사례가 있다면 설명
+   - 매우 간접적이거나 미미한 관련성도 포함하여 설명
 
 주의사항:
 - 형식적인 단어 매칭이 아닌 실질적인 내용의 연관성을 평가해주세요
-- 세부내용의 핵심 개념이나 목표가 강의에서 조금이라도 다뤄졌다면 관대하게 평가해주세요
+- 세부내용의 핵심 개념이나 목표가 조금이라도 다뤄졌다면 매우 관대하게 평가해주세요
 - 직접적인 설명이 아니더라도, 관련 개념이나 응용 사례가 포함되어 있다면 점수를 부여해주세요
+- 매우 간접적이거나 미미한 관련성이라도 발견된다면 최소 10점 이상을 부여해주세요
 """
             
             try:
@@ -346,7 +349,7 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
                 
                 # 세부내용 매칭 결과 저장
                 matched_details.append(detail_str)
-                matches_status.append(detail_score >= 40)  # 40% 이상이면 달성으로 판단 (기준 완화)
+                matches_status.append(detail_score >= 20)  # 20% 이상이면 달성으로 판단 (기준 대폭 완화)
                 total_score += detail_score
                 
             except Exception as e:
