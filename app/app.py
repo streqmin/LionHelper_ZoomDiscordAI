@@ -313,11 +313,12 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
 다음 형식으로 응답해주세요:
 1. 달성도 (0-100): 
    - 이 강의가 해당 세부내용을 얼마나 다루었는지를 백분율로 표현
-   - 직접적인 설명이 있으면 80-100점
-   - 관련 개념이나 응용사례를 다룬 경우 60-80점
-   - 간접적으로 연관된 내용을 다룬 경우 40-60점
-   - 약간의 관련성만 있는 경우 20-40점
-   - 매우 간접적이거나 미미한 관련성이 있는 경우 10-20점
+   - 직접적이고 상세한 설명이 있으면 90-100점
+   - 직접적인 설명이 있으면 70-89점
+   - 관련 개념이나 응용사례를 다룬 경우 50-69점
+   - 간접적으로 연관된 내용을 다룬 경우 30-49점
+   - 약간의 관련성만 있는 경우 10-29점
+   - 매우 간접적이거나 미미한 관련성이 있는 경우 1-9점
    - 전혀 다루지 않은 경우 0점
 
 2. 판단 근거:
@@ -329,7 +330,8 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
 - 형식적인 단어 매칭이 아닌 실질적인 내용의 연관성을 평가해주세요
 - 세부내용의 핵심 개념이나 목표가 조금이라도 다뤄졌다면 매우 관대하게 평가해주세요
 - 직접적인 설명이 아니더라도, 관련 개념이나 응용 사례가 포함되어 있다면 점수를 부여해주세요
-- 매우 간접적이거나 미미한 관련성이라도 발견된다면 최소 10점 이상을 부여해주세요
+- 매우 간접적이거나 미미한 관련성이라도 발견된다면 최소 1점 이상을 부여해주세요
+- 강의 내용이 해당 세부내용의 일부분만 다루더라도 그 부분에 대해 적절한 점수를 부여해주세요
 """
             
             try:
@@ -342,14 +344,19 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
                 for line in lines:
                     if '달성도' in line:
                         try:
-                            detail_score = int(re.search(r'\d+', line).group())
+                            # 숫자만 추출하여 점수로 변환
+                            score_match = re.search(r'\d+', line)
+                            if score_match:
+                                detail_score = int(score_match.group())
+                                # 점수가 100을 초과하는 경우 100으로 제한
+                                detail_score = min(100, detail_score)
                         except:
                             detail_score = 0
                         break
                 
                 # 세부내용 매칭 결과 저장
                 matched_details.append(detail_str)
-                matches_status.append(detail_score >= 20)  # 20% 이상이면 달성으로 판단 (기준 대폭 완화)
+                matches_status.append(detail_score >= 20)  # 20% 이상이면 달성으로 판단
                 total_score += detail_score
                 
             except Exception as e:
@@ -358,7 +365,13 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
                 matches_status.append(False)
         
         # 과목 전체 달성도 계산
-        achievement_rate = int(total_score / valid_details_count) if valid_details_count > 0 else 0
+        if valid_details_count > 0:
+            # 평균 점수 계산 시 소수점 아래는 버림
+            achievement_rate = int(total_score / valid_details_count)
+            # 최소 1%는 보장
+            achievement_rate = max(1, achievement_rate)
+        else:
+            achievement_rate = 0
         
         matched_subjects.append({
             'name': subject,
