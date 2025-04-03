@@ -342,15 +342,20 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
                 detail_score = 0
                 
                 for line in lines:
+                    line = line.strip()
                     if '달성도' in line:
                         try:
-                            # 숫자만 추출하여 점수로 변환
-                            score_match = re.search(r'\d+', line)
+                            # 달성도 숫자를 더 정확하게 추출
+                            score_text = line.split(':')[1].strip() if ':' in line else line
+                            # 첫 번째 숫자 찾기
+                            score_match = re.search(r'\d+', score_text)
                             if score_match:
                                 detail_score = int(score_match.group())
                                 # 점수가 100을 초과하는 경우 100으로 제한
-                                detail_score = min(100, detail_score)
-                        except:
+                                detail_score = min(100, max(0, detail_score))
+                                logger.info(f"추출된 달성도 점수: {detail_score} (원본 텍스트: {line})")
+                        except Exception as e:
+                            logger.error(f"달성도 점수 파싱 오류: {str(e)} (라인: {line})")
                             detail_score = 0
                         break
                 
@@ -358,20 +363,24 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
                 matched_details.append(detail_str)
                 matches_status.append(detail_score >= 20)  # 20% 이상이면 달성으로 판단
                 total_score += detail_score
+                logger.info(f"세부내용 '{detail_str}' 분석 완료 - 점수: {detail_score}")
                 
             except Exception as e:
                 logger.error(f"세부내용 '{detail_str}' 분석 중 오류 발생: {str(e)}")
                 matched_details.append(detail_str)
                 matches_status.append(False)
+                total_score += 0
         
         # 과목 전체 달성도 계산
         if valid_details_count > 0:
             # 평균 점수 계산 시 소수점 아래는 버림
             achievement_rate = int(total_score / valid_details_count)
-            # 최소 1%는 보장
-            achievement_rate = max(1, achievement_rate)
+            # 최소 1%는 보장하되, 실제 점수가 있는 경우에만
+            achievement_rate = max(1, achievement_rate) if total_score > 0 else 0
+            logger.info(f"과목 '{subject}' 전체 달성도 계산: {achievement_rate}% (총점: {total_score}, 유효 항목 수: {valid_details_count})")
         else:
             achievement_rate = 0
+            logger.info(f"과목 '{subject}'의 유효한 세부내용이 없음")
         
         matched_subjects.append({
             'name': subject,
