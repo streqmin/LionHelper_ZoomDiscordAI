@@ -72,43 +72,53 @@ def split_content(content, max_length=800):  # 청크 크기 축소
     
     return chunks
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=2, min=10, max=30)
-)
 def call_claude_api(prompt):
     """Claude API 직접 호출"""
-    try:
-        headers = {
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json"
-        }
-        
-        data = {
-            "prompt": prompt,
-            "model": "claude-instant-1.2",
-            "max_tokens_to_sample": 1500,
-            "temperature": 0.7,
-            "stop_sequences": ["\n\nHuman:"]
-        }
-        
-        response = session.post(
-            "https://api.anthropic.com/v1/complete",
-            headers=headers,
-            json=data,
-            timeout=60
-        )
-        
-        if response.status_code == 200:
-            return response.json()
-        else:
-            logger.error(f"API 응답 오류: {response.status_code} - {response.text}")
-            raise Exception(f"API 응답 오류: {response.status_code}")
+    max_retries = 3
+    base_wait_time = 10
+    
+    for attempt in range(max_retries):
+        try:
+            headers = {
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            }
             
-    except requests.exceptions.RequestException as e:
-        logger.error(f"API 호출 실패: {str(e)}")
-        raise
+            data = {
+                "prompt": prompt,
+                "model": "claude-instant-1.2",
+                "max_tokens_to_sample": 1500,
+                "temperature": 0.7,
+                "stop_sequences": ["\n\nHuman:"]
+            }
+            
+            response = session.post(
+                "https://api.anthropic.com/v1/complete",
+                headers=headers,
+                json=data,
+                timeout=60
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"API 응답 오류: {response.status_code} - {response.text}")
+                if attempt < max_retries - 1:
+                    wait_time = base_wait_time * (2 ** attempt)  # 지수 백오프
+                    time.sleep(wait_time)
+                    continue
+                raise Exception(f"API 응답 오류: {response.status_code}")
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"API 호출 실패 (시도 {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt < max_retries - 1:
+                wait_time = base_wait_time * (2 ** attempt)
+                time.sleep(wait_time)
+                continue
+            raise
+    
+    raise Exception("최대 재시도 횟수를 초과했습니다.")
 
 def analyze_content_in_chunks(content, analysis_type='vtt'):
     """청크 단위로 콘텐츠 분석"""
@@ -121,24 +131,20 @@ def analyze_content_in_chunks(content, analysis_type='vtt'):
         logger.info(f"Processing chunk {i}/{total_chunks}")
         
         try:
-            for attempt in range(3):
-                try:
-                    if analysis_type == 'vtt':
-                        prompt = f"\n\nHuman: 당신은 줌 회의록 분석 전문가입니다. 다음은 전체 회의록의 {i}/{total_chunks} 부분입니다. 이 부분을 분석해주세요:\n\n{chunk}\n\n다음 형식으로 분석 결과를 제공해주세요:\n\n# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n# 주요 키워드\n[이 부분의 주요 키워드들]\n\n# 중요 포인트\n[이 부분에서 특별히 주목할 만한 내용]\n\nAssistant:"
-                    else:
-                        prompt = f"\n\nHuman: 당신은 채팅 로그 분석 전문가입니다. 다음은 전체 채팅의 {i}/{total_chunks} 부분입니다. 이 부분을 분석해주세요:\n\n{chunk}\n\n다음 형식으로 분석 결과를 제공해주세요:\n\n# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n# 주요 키워드\n[이 부분의 주요 키워드들]\n\n# 대화 분위기\n[이 부분의 대화 톤과 분위기]\n\nAssistant:"
-                    
-                    response = call_claude_api(prompt)
-                    all_results.append(response['completion'])
-                    time.sleep(3)  # API 호출 간격 감소
-                    break
-                    
-                except Exception as e:
-                    if attempt == 2:
-                        raise
-                    logger.warning(f"Attempt {attempt + 1} failed for chunk {i}: {str(e)}")
-                    time.sleep(5)  # 재시도 전 대기
-                    
+            result = call_claude_api(
+                prompt=f"\n\nHuman: 당신은 {'줌 회의록' if analysis_type == 'vtt' else '채팅 로그'} 분석 전문가입니다. "
+                f"다음은 전체 {'회의록' if analysis_type == 'vtt' else '채팅'}의 {i}/{total_chunks} 부분입니다. "
+                f"이 부분을 분석해주세요:\n\n{chunk}\n\n"
+                f"다음 형식으로 분석 결과를 제공해주세요:\n\n"
+                f"# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n"
+                f"# 주요 키워드\n[이 부분의 주요 키워드들]\n\n"
+                f"{'# 중요 포인트' if analysis_type == 'vtt' else '# 대화 분위기'}\n"
+                f"[{'이 부분에서 특별히 주목할 만한 내용' if analysis_type == 'vtt' else '이 부분의 대화 톤과 분위기'}]\n\n"
+                f"Assistant:"
+            )
+            all_results.append(result['completion'])
+            time.sleep(3)
+            
         except Exception as e:
             logger.error(f"Failed to process chunk {i}: {str(e)}")
             all_results.append(f"[이 부분 처리 중 오류 발생: {str(e)}]")
