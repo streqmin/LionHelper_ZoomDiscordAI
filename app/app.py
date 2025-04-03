@@ -25,6 +25,10 @@ app = Flask(__name__)
 app.config.from_object(Config)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB 제한
+app.config['ALLOWED_EXTENSIONS'] = {'vtt', 'txt'}  # 허용된 파일 확장자
+
+# 업로드 폴더가 없으면 생성
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Anthropic 클라이언트 초기화
 api_key = os.getenv('ANTHROPIC_API_KEY')
@@ -45,18 +49,6 @@ client = anthropic.Anthropic(
     http_client=http_client
 )
 logger.info("Anthropic client initialized successfully")
-
-# 비동기 Anthropic 클라이언트 초기화
-async_client = None
-
-def init_async_client():
-    global async_client
-    if async_client is None:
-        async_client = anthropic.AsyncAnthropic(api_key=api_key)
-
-@app.before_first_request
-def before_first_request():
-    init_async_client()
 
 def split_content(content, max_length=1000):  # 청크 크기를 1000자로 감소
     """콘텐츠를 작은 청크로 분할"""
@@ -87,7 +79,7 @@ def split_content(content, max_length=1000):  # 청크 크기를 1000자로 감�
 def call_claude_api(prompt):
     """Claude API 호출 함수 with 재시도 로직"""
     try:
-        completion = http_client.completions.create(
+        completion = client.completions.create(
             prompt=prompt,
             model="claude-instant-1.2",  # Claude Instant 모델로 변경
             max_tokens_to_sample=1500,  # 토큰 수 감소
@@ -168,97 +160,73 @@ def chat_analysis():
 
 @app.route('/analyze_vtt', methods=['POST'])
 def analyze_vtt():
-    if 'vtt_file' not in request.files:
+    if 'file' not in request.files:
         return jsonify({'error': '파일이 없습니다.'}), 400
     
-    file = request.files['vtt_file']
+    file = request.files['file']
     if file.filename == '':
         return jsonify({'error': '선택된 파일이 없습니다.'}), 400
     
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(file_path)
-        
-        try:
-            # 파일 읽기
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            logger.info("Starting VTT analysis with Claude API")
-            
-            # 청크 단위로 분석 수행
-            result_text = analyze_content_in_chunks(content, 'vtt')
-            
-            # 분석 결과
-            result = {
-                'status': 'success',
-                'result': result_text,
-                'timestamp': datetime.now().isoformat()
-            }
-            
-            # 결과를 JSON 파일로 저장
-            result_file = file_path.replace('.vtt', '_analysis.json')
-            with open(result_file, 'w', encoding='utf-8') as f:
-                json.dump(result, f, ensure_ascii=False, indent=2)
-            
-            return jsonify(result)
-            
-        except Exception as e:
-            logger.error(f"General error: {str(e)}")
-            return jsonify({
-                'status': 'error',
-                'error': f"처리 중 오류 발생: {str(e)}"
-            }), 500
+    if not file.filename.endswith('.vtt'):
+        return jsonify({'error': 'VTT 파일만 업로드 가능합니다.'}), 400
     
-    return jsonify({'error': '허용되지 않는 파일 형식입니다.'}), 400
+    try:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # VTT 파일 분석
+        result = analyze_content_in_chunks(content, 'vtt')
+        
+        # 분석 결과 저장
+        result_filename = f"analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        result_path = os.path.join(app.config['UPLOAD_FOLDER'], result_filename)
+        
+        with open(result_path, 'w', encoding='utf-8') as f:
+            f.write(result)
+        
+        return jsonify({
+            'message': '분석이 완료되었습니다.',
+            'result': result,
+            'download_url': f'/download/{result_filename}'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error processing VTT file: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/analyze_chat', methods=['POST'])
 def analyze_chat():
-    if 'chat_file' not in request.files:
-        return jsonify({'error': '파일이 없습니다.'}), 400
-    
-    file = request.files['chat_file']
-    if file.filename == '':
-        return jsonify({'error': '선택된 파일이 없습니다.'}), 400
-    
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(file_path)
+    try:
+        data = request.get_json()
+        if not data or 'content' not in data:
+            return jsonify({'error': '채팅 내용이 없습니다.'}), 400
         
-        try:
-            # 파일 읽기
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            logger.info("Starting chat analysis with Claude API")
-            
-            # 청크 단위로 분석 수행
-            result_text = analyze_content_in_chunks(content, 'chat')
-            
-            # 분석 결과
-            result = {
-                'status': 'success',
-                'result': result_text,
-                'timestamp': datetime.now().isoformat()
-            }
-            
-            # 결과를 JSON 파일로 저장
-            result_file = file_path.replace('.txt', '_analysis.json')
-            with open(result_file, 'w', encoding='utf-8') as f:
-                json.dump(result, f, ensure_ascii=False, indent=2)
-            
-            return jsonify(result)
-            
-        except Exception as e:
-            logger.error(f"General error: {str(e)}")
-            return jsonify({
-                'status': 'error',
-                'error': f"처리 중 오류 발생: {str(e)}"
-            }), 500
-    
-    return jsonify({'error': '허용되지 않는 파일 형식입니다.'}), 400
+        content = data['content']
+        logger.info("Starting chat analysis with Claude API")
+        
+        # 채팅 내용 분석
+        result = analyze_content_in_chunks(content, 'chat')
+        
+        # 분석 결과 저장
+        result_filename = f"chat_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        result_path = os.path.join(app.config['UPLOAD_FOLDER'], result_filename)
+        
+        with open(result_path, 'w', encoding='utf-8') as f:
+            f.write(result)
+        
+        return jsonify({
+            'message': '분석이 완료되었습니다.',
+            'result': result,
+            'download_url': f'/download/{result_filename}'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error processing chat content: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/result/<filename>')
 def get_result(filename):
