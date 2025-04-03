@@ -201,11 +201,31 @@ def analyze_vtt():
 @app.route('/analyze_chat', methods=['POST'])
 def analyze_chat():
     try:
-        data = request.get_json()
-        if not data or 'content' not in data:
+        content = None
+        
+        # JSON 형식 처리
+        if request.is_json:
+            data = request.get_json()
+            if data and 'content' in data:
+                content = data['content']
+        
+        # form-data 형식 처리
+        elif 'content' in request.form:
+            content = request.form['content']
+        
+        # 파일 업로드 처리
+        elif 'file' in request.files:
+            file = request.files['file']
+            if file.filename != '':
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+        
+        if not content:
             return jsonify({'error': '채팅 내용이 없습니다.'}), 400
         
-        content = data['content']
         logger.info("Starting chat analysis with Claude API")
         
         # 채팅 내용 분석
