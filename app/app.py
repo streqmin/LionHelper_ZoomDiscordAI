@@ -262,7 +262,10 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
             if subject not in subjects:
                 subjects.append(subject)
                 subject_details[subject] = []
-            subject_details[subject].append(details)
+            # 리스트가 아닌 경우 리스트로 변환
+            if isinstance(details, str):
+                details = [details]
+            subject_details[subject].extend(details)
     
     # VTT 내용 분석
     vtt_sections = vtt_result.split('---')
@@ -276,64 +279,73 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
     details_matches = {}
     
     for subject in subjects:
-        # GPT API를 사용하여 각 세부내용과 VTT 내용의 매칭 분석
-        prompt = f"""
-강의 내용이 특정 교과목의 학습 주제 및 세부내용과 얼마나 연관되어 있는지 분석해주세요.
-단순히 키워드가 일치하는지가 아니라, 의미적 연관성과 학습 목표 달성 여부를 중점적으로 평가해주세요.
+        # 과목별 세부내용 분석
+        matched_details = []
+        matches_status = []
+        total_score = 0
+        valid_details_count = 0
+        
+        # 각 세부내용에 대해 분석
+        for detail in subject_details[subject]:
+            if not detail or str(detail).strip() == 'nan':  # 빈 세부내용 제외
+                continue
+                
+            valid_details_count += 1
+            detail_str = str(detail).strip()
+            
+            # GPT API를 사용하여 세부내용과 VTT 내용의 매칭 분석
+            prompt = f"""
+다음 강의 내용이 특정 교과 세부내용을 다루고 있는지 분석해주세요.
 
-[교과목 정보]
-교과목명: {subject}
-학습 주제 및 세부내용:
-{chr(10).join(f"- {detail}" for detail in subject_details[subject])}
+[분석할 교과 세부내용]
+{detail_str}
 
-[강의 내용 요약]
+[강의 내용]
 {vtt_content}
 
-다음 형식으로 분석해주세요:
-1. 전체 달성도 (0-100): 
-   - 이 강의가 해당 교과목의 학습 목표를 얼마나 달성했는지를 백분율로 표현
-   - 일부 주제만 다루더라도 그 내용이 충실하다면 높은 점수 부여 가능
-   - 키워드 일치가 아닌 실질적인 학습 내용의 연관성 기준
+다음 형식으로 응답해주세요:
+1. 달성도 (0-100): 
+   - 이 강의가 해당 세부내용을 얼마나 다루었는지를 백분율로 표현
+   - 직접적인 설명이 있으면 높은 점수
+   - 관련 개념이나 응용사례만 다룬 경우 중간 점수
+   - 전혀 다루지 않은 경우 0점
 
-2. 세부내용 분석:
-각 세부내용별로 다음 형식으로 분석:
-- [관련도 높음/중간/낮음] (세부내용): (구체적인 근거)
-  - 강의에서 다룬 내용이 이 세부내용과 어떻게 연관되는지 설명
-  - 직접적인 언급이 없더라도 연관된 개념이나 응용사례를 다룬 경우 포함
+2. 판단 근거:
+   - 강의 내용 중 이 세부내용과 관련된 부분을 구체적으로 설명
+   - 직접적인 언급이 없더라도 연관된 개념이나 사례가 있다면 설명
 
 주의사항:
-- 형식적인 단어 매칭이 아닌 실질적인 학습 내용의 연관성을 평가해주세요
-- 강의가 해당 교과목의 일부 주제만 다루더라도, 그 내용이 충실하다면 높은 점수를 줄 수 있습니다
-- 직접적인 용어가 사용되지 않더라도, 관련 개념이나 응용사례를 다루고 있다면 연관성이 있다고 판단해주세요
+- 형식적인 단어 매칭이 아닌 실질적인 내용의 연관성을 평가해주세요
+- 세부내용의 핵심 개념이나 목표가 강의에서 다뤄졌는지를 중점적으로 판단해주세요
 """
-        
-        try:
-            analysis = api_client.analyze_text(prompt, 'curriculum')
             
-            # 분석 결과 파싱
-            lines = analysis.split('\n')
-            achievement_rate = 0
-            
-            for line in lines:
-                if '전체 달성도' in line:
-                    try:
-                        achievement_rate = int(re.search(r'\d+', line).group())
-                    except:
-                        achievement_rate = 0
-                elif line.startswith('- [관련도'):
-                    is_match = '높음' in line or '중간' in line
-                    detail_text = line[line.find(']')+1:].strip()
-                    if ':' in detail_text:
-                        detail_text = detail_text.split(':', 1)[0].strip()
-                    if detail_text not in matched_details:
-                        matched_details.append(detail_text)
-                        matches_status.append(is_match)
+            try:
+                analysis = api_client.analyze_text(prompt, 'curriculum')
+                
+                # 분석 결과 파싱
+                lines = analysis.split('\n')
+                detail_score = 0
+                
+                for line in lines:
+                    if '달성도' in line:
+                        try:
+                            detail_score = int(re.search(r'\d+', line).group())
+                        except:
+                            detail_score = 0
+                        break
+                
+                # 세부내용 매칭 결과 저장
+                matched_details.append(detail_str)
+                matches_status.append(detail_score >= 50)  # 50% 이상이면 달성으로 판단
+                total_score += detail_score
+                
+            except Exception as e:
+                logger.error(f"세부내용 '{detail_str}' 분석 중 오류 발생: {str(e)}")
+                matched_details.append(detail_str)
+                matches_status.append(False)
         
-        except Exception as e:
-            logger.error(f"과목 {subject} 분석 중 오류 발생: {str(e)}")
-            achievement_rate = 0
-            matched_details = subject_details[subject]
-            matches_status = [False] * len(matched_details)
+        # 과목 전체 달성도 계산
+        achievement_rate = int(total_score / valid_details_count) if valid_details_count > 0 else 0
         
         matched_subjects.append({
             'name': subject,
