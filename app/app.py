@@ -550,23 +550,41 @@ def format_vtt_analysis(content):
         ])
     
     # 위험 발언 섹션
-    if vtt_sections['위험 발언']:
+    has_real_risks = False
+    risk_items = []
+    
+    for risk in vtt_sections['위험 발언']:
+        # 위험 발언이 없다는 내용의 텍스트는 제외
+        if (risk and 
+            not risk.endswith('없습니다.') and 
+            not risk.startswith('특별한 주의사항이 없') and
+            not '발견되지 않' in risk and
+            not '확인되지 않' in risk and
+            not '포함되어 있지 않' in risk and
+            not '위험한 내용이 없' in risk and
+            not '특별한 위험' in risk and
+            not '부적절한 내용이 없' in risk):
+            risk_items.append(risk)
+            has_real_risks = True
+    
+    html_content.extend([
+        '<div class="category-section risk-section' + (' has-risks' if has_real_risks else ' no-risks') + '">',
+        '    <h2 class="category-title">위험 발언</h2>',
+        '    <div class="risk-summary">',
+        '        <div class="risk-icon">' + ('⚠️' if has_real_risks else '✅') + '</div>',
+        '        <p>' + ('다음과 같은 위험 발언이 감지되었습니다.' if has_real_risks else '위험 발언이 감지되지 않았습니다.') + '</p>',
+        '    </div>'
+    ])
+    
+    if has_real_risks:
         html_content.extend([
-            '<div class="category-section risk-section">',
-            '    <h2 class="category-title">위험 발언</h2>',
-            '    <div class="risk-summary">',
-            '        <div class="risk-icon">⚠️</div>',
-            '        <p>다음과 같은 위험 발언이 감지되었습니다.</p>',
-            '    </div>',
             '    <ul class="risk-list">'
         ])
-        for risk in vtt_sections['위험 발언']:
+        for risk in risk_items:
             html_content.append(f'        <li>{risk}</li>')
-        html_content.extend([
-            '    </ul>',
-            '</div>'
-        ])
+        html_content.append('    </ul>')
     
+    html_content.append('</div>')
     html_content.append('</div>')
     return '\n'.join(html_content)
 
