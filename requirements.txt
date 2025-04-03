@@ -3,10 +3,10 @@ Werkzeug==3.0.1
 gunicorn==21.2.0
 gevent==21.12.0
 webvtt-py==0.4.6
-numpy==1.21.6
-pandas==1.3.5
+numpy==1.26.4
+pandas==2.2.1
 openpyxl==3.0.9
 python-dotenv==1.0.1
-requests==2.27.1
-openai==1.12.0
+requests==2.31.0
+openai==1.3.0
 tenacity==8.2.3 

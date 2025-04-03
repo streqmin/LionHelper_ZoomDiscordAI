@@ -18,11 +18,8 @@ class GPTAPIClient:
         self.logger = logging.getLogger(__name__)
         self.model = "gpt-3.5-turbo"
         
-        # OpenAI 클라이언트 초기화 (프록시 설정 제거)
-        self.client = OpenAI(
-            api_key=api_key,
-            http_client=None  # 기본 HTTP 클라이언트 사용
-        )
+        # OpenAI 클라이언트 초기화 (1.3.0 버전 방식)
+        self.client = OpenAI(api_key=api_key)
         
         self.logger.info(f"GPTAPIClient 초기화 완료 (모델: {self.model})")
 
