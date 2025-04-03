@@ -2,6 +2,7 @@ import os
 import logging
 import time
 import json
+import httpx
 from typing import List, Optional
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -18,8 +19,14 @@ class GPTAPIClient:
         self.logger = logging.getLogger(__name__)
         self.model = "gpt-3.5-turbo"
         
-        # OpenAI 클라이언트 초기화 (1.3.0 버전 방식)
-        self.client = OpenAI(api_key=api_key)
+        # httpx 클라이언트 설정
+        http_client = httpx.Client()
+        
+        # OpenAI 클라이언트 초기화
+        self.client = OpenAI(
+            api_key=api_key,
+            http_client=http_client
+        )
         
         self.logger.info(f"GPTAPIClient 초기화 완료 (모델: {self.model})")
 
