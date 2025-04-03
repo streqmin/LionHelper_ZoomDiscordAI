@@ -159,28 +159,52 @@ def process_curriculum_file(filepath):
     try:
         if ext in ['xlsx', 'xls']:
             import pandas as pd
-            df = pd.read_excel(filepath)
             
-            # 필수 컬럼 확인
-            required_columns = ['과목명', '세부내용']
-            if not all(col in df.columns for col in required_columns):
-                raise ValueError('엑셀 파일에 필수 컬럼(과목명, 세부내용)이 없습니다.')
+            # 엑셀 파일의 모든 셀 데이터를 읽기
+            df = pd.read_excel(filepath, header=None)
             
-            # NaN 값을 빈 문자열로 변환
-            df = df.fillna('')
-            
-            # 과목별로 세부내용 정리
+            # 결과를 저장할 리스트
             result = []
-            for subject in df['과목명'].unique():
-                if subject:  # 과목명이 비어있지 않은 경우만
-                    details = df[df['과목명'] == subject]['세부내용'].tolist()
-                    # 빈 문자열 제외
-                    details = [d for d in details if d]
-                    if details:  # 세부내용이 있는 경우만
+            current_subject = None
+            current_details = []
+            
+            # 모든 행을 순회하면서 과목명과 세부내용 추출
+            for _, row in df.iterrows():
+                # 각 행의 모든 셀을 문자열로 변환하고 빈 셀 제거
+                row_values = [str(cell).strip() for cell in row if str(cell).strip() != 'nan']
+                if not row_values:  # 빈 행 무시
+                    continue
+                
+                # 첫 번째 열이 비어있지 않은 경우, 새로운 과목으로 간주
+                first_cell = str(row[0]).strip()
+                if first_cell != 'nan' and first_cell:
+                    # 이전 과목의 정보가 있으면 저장
+                    if current_subject and current_details:
                         result.append({
-                            '과목명': subject,
-                            '세부내용': details
+                            '과목명': current_subject,
+                            '세부내용': current_details
                         })
+                    # 새로운 과목 시작
+                    current_subject = first_cell
+                    current_details = []
+                    # 같은 행에 세부내용이 있는 경우
+                    if len(row_values) > 1:
+                        current_details.extend(row_values[1:])
+                else:
+                    # 첫 번째 열이 비어있는 경우, 현재 과목의 세부내용으로 추가
+                    if current_subject and row_values:
+                        current_details.extend(row_values)
+            
+            # 마지막 과목 정보 추가
+            if current_subject and current_details:
+                result.append({
+                    '과목명': current_subject,
+                    '세부내용': current_details
+                })
+            
+            if not result:
+                raise ValueError('엑셀 파일에서 과목명과 세부내용을 추출할 수 없습니다.')
+                
             return result
             
         elif ext == 'json':
