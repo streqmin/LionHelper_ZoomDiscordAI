@@ -476,7 +476,11 @@ def format_analysis_result(content):
     # 카테고리별로 내용을 저장할 딕셔너리
     categories = {
         '주요 대화 주제': [],
-        '수강생 감정/태도 분석': [],
+        '수강생 감정/태도 분석': {
+            '1. 긍정적 반응': [],
+            '2. 부정적 반응': [],
+            '3. 질문/요청사항': []
+        },
         '어려움/불만 상세 분석': [],
         '개선 제안': [],
         '위험 발언 및 주의사항': [],
@@ -493,14 +497,33 @@ def format_analysis_result(content):
         # 각 섹션의 내용을 파싱
         lines = section.strip().split('\n')
         current_category = None
+        current_subcategory = None
         
         for line in lines:
             line = line.strip()
+            if not line:
+                continue
+                
             if line.startswith('# '):
                 current_category = line[2:].strip()  # '#' 제거
+                current_subcategory = None
                 continue
-            if line and current_category in categories:
-                categories[current_category].append(line)
+                
+            # 수강생 감정/태도 분석의 하위 카테고리 처리
+            if current_category == '수강생 감정/태도 분석':
+                if line in ['1. 긍정적 반응', '2. 부정적 반응', '3. 질문/요청사항']:
+                    current_subcategory = line
+                    continue
+                if current_subcategory and line.startswith('- '):
+                    # 중복 제거를 위해 이미 있는 항목은 추가하지 않음
+                    if line not in categories[current_category][current_subcategory]:
+                        categories[current_category][current_subcategory].append(line)
+                    continue
+            
+            # 다른 카테고리 처리
+            if current_category in categories and isinstance(categories[current_category], list):
+                if line not in categories[current_category]:  # 중복 제거
+                    categories[current_category].append(line)
     
     # HTML 생성
     html_content = ['<div class="analysis-result">']
@@ -520,18 +543,27 @@ def format_analysis_result(content):
         ])
     
     # 수강생 감정/태도 분석 섹션
-    if categories['수강생 감정/태도 분석']:
+    if any(categories['수강생 감정/태도 분석'].values()):
         html_content.extend([
             '<div class="category-section">',
-            '    <h2 class="category-title">수강생 감정/태도 분석</h2>',
-            '    <ul class="analysis-list">'
+            '    <h2 class="category-title">수강생 감정/태도 분석</h2>'
         ])
-        for item in categories['수강생 감정/태도 분석']:
-            html_content.append(f'        <li>{item}</li>')
-        html_content.extend([
-            '    </ul>',
-            '</div>'
-        ])
+        
+        for subcategory, items in categories['수강생 감정/태도 분석'].items():
+            if items:  # 해당 하위 카테고리에 내용이 있는 경우에만 표시
+                html_content.extend([
+                    f'    <div class="subsection">',
+                    f'        <h3 class="subsection-title">{subcategory}</h3>',
+                    f'        <ul class="analysis-list">'
+                ])
+                for item in items:
+                    html_content.append(f'            <li>{item[2:]}</li>')  # '- ' 제거
+                html_content.extend([
+                    '        </ul>',
+                    '    </div>'
+                ])
+        
+        html_content.append('</div>')
     
     # 어려움/불만 상세 분석 섹션
     if categories['어려움/불만 상세 분석']:
