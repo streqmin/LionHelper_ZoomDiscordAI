@@ -122,86 +122,96 @@ def format_analysis_result(content):
     """분석 결과를 HTML 형식으로 변환"""
     logger.info(f"원본 분석 결과: {content}")
     
-    sections = re.split(r'(?=\d\. )', content)
+    # 섹션을 분리 (--- 구분자 기준)
+    sections = content.split('---')
     logger.info(f"섹션 분할 결과: {sections}")
     
     html_content = ''
+    section_number = 1
     
     for section in sections:
-        if section.strip():
-            logger.info(f"처리 중인 섹션: {section}")
-            main_match = re.match(r'^(\d+)\. (.+?)(?:\n|$)', section, re.MULTILINE)
+        if not section.strip():
+            continue
             
-            if not main_match:
-                logger.warning(f"메인 섹션 매칭 실패: {section}")
+        logger.info(f"처리 중인 섹션: {section}")
+        
+        # 각 섹션의 내용을 파싱
+        lines = section.strip().split('\n')
+        current_part = None
+        parts = {'주요 내용': [], '키워드': [], '분석': []}
+        
+        for line in lines:
+            line = line.strip()
+            if line.startswith('# '):
+                current_part = line[2:].strip()  # '#' 제거
                 continue
-                
-            main_number = main_match.group(1)
-            main_title = main_match.group(2)
-            logger.info(f"메인 섹션 매칭: 번호={main_number}, 제목={main_title}")
-            
-            section_content = re.sub(r'^\d+\. .+?(?:\n|$)', '', section, flags=re.MULTILINE).strip()
-            logger.info(f"섹션 내용: {section_content}")
-            
-            subsections = re.split(r'(?=\d+\.\d+ )', section_content)
-            logger.info(f"하위 섹션 분할: {subsections}")
-            
+            if line and current_part in parts:
+                parts[current_part].append(line)
+        
+        # HTML 생성
+        if any(parts.values()):
             html_content += f'''
                 <div class="summary-section">
-                    <h2><span class="section-number">{main_number}.</span>{main_title}</h2>
-                    {format_subsections(subsections)}
-                </div>
+                    <h2><span class="section-number">{section_number}.</span>섹션 {section_number}</h2>
             '''
+            
+            # 주요 내용
+            if parts['주요 내용']:
+                html_content += f'''
+                    <div class="subsection">
+                        <div class="subsection-title">
+                            <span class="section-number">{section_number}.1</span>주요 내용
+                        </div>
+                        <ul>
+                            {format_list_items("\\n".join(parts['주요 내용']))}
+                        </ul>
+                    </div>
+                '''
+            
+            # 키워드
+            if parts['키워드']:
+                html_content += f'''
+                    <div class="subsection">
+                        <div class="subsection-title">
+                            <span class="section-number">{section_number}.2</span>키워드
+                        </div>
+                        <ul>
+                            {format_list_items("\\n".join(parts['키워드']))}
+                        </ul>
+                    </div>
+                '''
+            
+            # 분석
+            if parts['분석']:
+                html_content += f'''
+                    <div class="subsection">
+                        <div class="subsection-title">
+                            <span class="section-number">{section_number}.3</span>분석
+                        </div>
+                        <ul>
+                            {format_list_items("\\n".join(parts['분석']))}
+                        </ul>
+                    </div>
+                '''
+            
+            html_content += '</div>'
+            section_number += 1
     
     logger.info(f"최종 HTML 결과: {html_content}")
     return html_content
 
-def format_subsections(subsections):
-    """하위 섹션을 HTML 형식으로 변환"""
-    html_subsections = ''
-    
-    for subsection in subsections:
-        if not subsection.strip():
-            continue
-            
-        logger.info(f"처리 중인 하위 섹션: {subsection}")
-        sub_match = re.match(r'^(\d+\.\d+) (.+?)(?:\n|$)', subsection, re.MULTILINE)
-        
-        if not sub_match:
-            logger.warning(f"하위 섹션 매칭 실패: {subsection}")
-            continue
-            
-        sub_number = sub_match.group(1)
-        sub_title = sub_match.group(2)
-        logger.info(f"하위 섹션 매칭: 번호={sub_number}, 제목={sub_title}")
-        
-        sub_content = re.sub(r'^\d+\.\d+ .+?(?:\n|$)', '', subsection, flags=re.MULTILINE).strip()
-        logger.info(f"하위 섹션 내용: {sub_content}")
-        
-        html_subsections += f'''
-            <div class="subsection">
-                <div class="subsection-title">
-                    <span class="section-number">{sub_number}</span>{sub_title}
-                </div>
-                <ul>
-                    {format_list_items(sub_content)}
-                </ul>
-            </div>
-        '''
-    
-    return html_subsections
-
 def format_list_items(content):
     """목록 항목을 HTML 형식으로 변환"""
-    items = content.split('\n')
-    html_items = ''
-    
-    for item in items:
-        item = item.strip()
-        if item.startswith('•') or item.startswith('-'):
-            html_items += f'<li>{item[1:].strip()}</li>'
-    
-    return html_items
+    items = []
+    for line in content.split('\n'):
+        line = line.strip()
+        if line.startswith('- '):
+            items.append(f'<li>{line[2:].strip()}</li>')
+        elif line.startswith('• '):
+            items.append(f'<li>{line[2:].strip()}</li>')
+        elif line:  # 일반 텍스트인 경우
+            items.append(f'<li>{line}</li>')
+    return '\n'.join(items)
 
 if __name__ == '__main__':
     app.run(debug=True) 
