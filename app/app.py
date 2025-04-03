@@ -72,87 +72,6 @@ def analysis_progress():
                 break
     return Response(generate(), mimetype='text/event-stream')
 
-@app.route('/analyze', methods=['POST'])
-@app.route('/analyze_chat', methods=['POST'])
-@app.route('/analyze_vtt', methods=['POST'])
-def analyze():
-    try:
-        logger.info("분석 요청 수신")
-        logger.info(f"요청 URL: {request.url}")
-        logger.info(f"Content-Type: {request.content_type}")
-        logger.info(f"Form data: {request.form}")
-        logger.info(f"Files: {request.files}")
-        
-        # VTT 파일 확인
-        if 'vtt_file' not in request.files:
-            logger.error("VTT 파일이 요청에 포함되지 않음")
-            return jsonify({'error': 'VTT 파일이 없습니다'}), 400
-            
-        vtt_file = request.files['vtt_file']
-        if vtt_file.filename == '':
-            logger.error("VTT 파일명이 비어있음")
-            return jsonify({'error': 'VTT 파일이 선택되지 않았습니다'}), 400
-
-        # 커리큘럼 파일 확인
-        if 'curriculum_file' not in request.files:
-            logger.error("커리큘럼 파일이 요청에 포함되지 않음")
-            return jsonify({'error': '커리큘럼 파일이 없습니다'}), 400
-            
-        curriculum_file = request.files['curriculum_file']
-        if curriculum_file.filename == '':
-            logger.error("커리큘럼 파일명이 비어있음")
-            return jsonify({'error': '커리큘럼 파일이 선택되지 않았습니다'}), 400
-
-        # VTT 파일 처리
-        vtt_filename = secure_filename(vtt_file.filename)
-        vtt_filepath = os.path.join(app.config['UPLOAD_FOLDER'], vtt_filename)
-        vtt_file.save(vtt_filepath)
-        logger.info(f"VTT 파일 저장 완료: {vtt_filepath}")
-
-        # 커리큘럼 파일 처리
-        curriculum_filename = secure_filename(curriculum_file.filename)
-        curriculum_filepath = os.path.join(app.config['UPLOAD_FOLDER'], curriculum_filename)
-        curriculum_file.save(curriculum_filepath)
-        logger.info(f"커리큘럼 파일 저장 완료: {curriculum_filepath}")
-        
-        try:
-            # VTT 파일 내용 읽기
-            with open(vtt_filepath, 'r', encoding='utf-8') as f:
-                vtt_content = f.read()
-            logger.info(f"VTT 파일 내용 읽기 성공 (길이: {len(vtt_content)} 문자)")
-            
-            # 커리큘럼 파일 처리 (엑셀 또는 JSON)
-            curriculum_content = process_curriculum_file(curriculum_filepath)
-            logger.info("커리큘럼 파일 처리 완료")
-            
-            # API를 통한 분석
-            vtt_result = api_client.analyze_text(vtt_content, 'vtt')
-            curriculum_result = analyze_curriculum_match(vtt_result, curriculum_content)
-            logger.info("분석 완료")
-            
-            # 결과를 HTML 형식으로 변환
-            vtt_html = format_analysis_result(vtt_result)
-            return jsonify({
-                'vtt_result': vtt_html,
-                'curriculum_result': curriculum_result
-            })
-            
-        except Exception as e:
-            logger.error(f"처리 중 오류 발생: {str(e)}")
-            return jsonify({'error': str(e)}), 500
-        finally:
-            # 임시 파일 삭제
-            try:
-                os.remove(vtt_filepath)
-                os.remove(curriculum_filepath)
-                logger.info("임시 파일 삭제 완료")
-            except Exception as e:
-                logger.warning(f"임시 파일 삭제 실패: {str(e)}")
-                
-    except Exception as e:
-        logger.error(f"요청 처리 중 예상치 못한 오류 발생: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
 @app.route('/analyze_chat', methods=['POST'])
 def analyze_chat():
     try:
@@ -207,6 +126,75 @@ def analyze_chat():
                 
     except Exception as e:
         logger.error(f"요청 처리 중 예상치 못한 오류 발생: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/analyze_vtt', methods=['POST'])
+def analyze_vtt():
+    try:
+        logger.info("VTT 분석 요청 수신")
+        
+        # 파일 처리 및 검증
+        if 'vtt_file' not in request.files or 'curriculum_file' not in request.files:
+            return jsonify({'error': '필요한 파일이 누락되었습니다.'}), 400
+            
+        vtt_file = request.files['vtt_file']
+        curriculum_file = request.files['curriculum_file']
+        
+        if vtt_file.filename == '' or curriculum_file.filename == '':
+            return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
+            
+        # 파일 저장
+        vtt_filename = secure_filename(vtt_file.filename)
+        curriculum_filename = secure_filename(curriculum_file.filename)
+        
+        vtt_filepath = os.path.join(app.config['UPLOAD_FOLDER'], vtt_filename)
+        curriculum_filepath = os.path.join(app.config['UPLOAD_FOLDER'], curriculum_filename)
+        
+        vtt_file.save(vtt_filepath)
+        curriculum_file.save(curriculum_filepath)
+        
+        try:
+            # VTT 파일 내용 읽기
+            with open(vtt_filepath, 'r', encoding='utf-8') as f:
+                vtt_content = f.read()
+            
+            # VTT 내용을 청크로 분할
+            chunks = split_vtt_content(vtt_content)
+            total_chunks = len(chunks)
+            
+            # 각 청크 분석
+            analyzed_chunks = []
+            for i, chunk in enumerate(chunks, 1):
+                update_progress(f"청크 {i}/{total_chunks} 분석 중")
+                chunk_result = api_client.analyze_text(chunk, 'vtt')
+                analyzed_chunks.append(chunk_result)
+            
+            update_progress("커리큘럼 매칭 분석 중")
+            # 커리큘럼 파일 처리
+            curriculum_content = process_curriculum_file(curriculum_filepath)
+            
+            # 분석 결과 통합 및 매칭
+            combined_result = combine_analysis_results(analyzed_chunks)
+            curriculum_result = analyze_curriculum_match(combined_result, curriculum_content)
+            
+            # 결과를 HTML 형식으로 변환
+            vtt_html = format_analysis_result(combined_result)
+            
+            return jsonify({
+                'vtt_result': vtt_html,
+                'curriculum_result': curriculum_result
+            })
+            
+        finally:
+            # 임시 파일 삭제
+            try:
+                os.remove(vtt_filepath)
+                os.remove(curriculum_filepath)
+            except Exception as e:
+                logger.warning(f"임시 파일 삭제 실패: {str(e)}")
+                
+    except Exception as e:
+        logger.error(f"분석 중 오류 발생: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 def process_curriculum_file(filepath):
@@ -634,75 +622,6 @@ def format_list_items(content):
 def update_progress(message):
     """분석 진행 상황을 큐에 추가"""
     progress_queue.put({'message': message})
-
-@app.route('/analyze_vtt', methods=['POST'])
-def analyze_vtt():
-    try:
-        logger.info("VTT 분석 요청 수신")
-        
-        # 파일 처리 및 검증
-        if 'vtt_file' not in request.files or 'curriculum_file' not in request.files:
-            return jsonify({'error': '필요한 파일이 누락되었습니다.'}), 400
-            
-        vtt_file = request.files['vtt_file']
-        curriculum_file = request.files['curriculum_file']
-        
-        if vtt_file.filename == '' or curriculum_file.filename == '':
-            return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
-            
-        # 파일 저장
-        vtt_filename = secure_filename(vtt_file.filename)
-        curriculum_filename = secure_filename(curriculum_file.filename)
-        
-        vtt_filepath = os.path.join(app.config['UPLOAD_FOLDER'], vtt_filename)
-        curriculum_filepath = os.path.join(app.config['UPLOAD_FOLDER'], curriculum_filename)
-        
-        vtt_file.save(vtt_filepath)
-        curriculum_file.save(curriculum_filepath)
-        
-        try:
-            # VTT 파일 내용 읽기
-            with open(vtt_filepath, 'r', encoding='utf-8') as f:
-                vtt_content = f.read()
-            
-            # VTT 내용을 청크로 분할
-            chunks = split_vtt_content(vtt_content)
-            total_chunks = len(chunks)
-            
-            # 각 청크 분석
-            analyzed_chunks = []
-            for i, chunk in enumerate(chunks, 1):
-                update_progress(f"청크 {i}/{total_chunks} 분석 중")
-                chunk_result = api_client.analyze_text(chunk, 'vtt')
-                analyzed_chunks.append(chunk_result)
-            
-            update_progress("커리큘럼 매칭 분석 중")
-            # 커리큘럼 파일 처리
-            curriculum_content = process_curriculum_file(curriculum_filepath)
-            
-            # 분석 결과 통합 및 매칭
-            combined_result = combine_analysis_results(analyzed_chunks)
-            curriculum_result = analyze_curriculum_match(combined_result, curriculum_content)
-            
-            # 결과를 HTML 형식으로 변환
-            vtt_html = format_analysis_result(combined_result)
-            
-            return jsonify({
-                'vtt_result': vtt_html,
-                'curriculum_result': curriculum_result
-            })
-            
-        finally:
-            # 임시 파일 삭제
-            try:
-                os.remove(vtt_filepath)
-                os.remove(curriculum_filepath)
-            except Exception as e:
-                logger.warning(f"임시 파일 삭제 실패: {str(e)}")
-                
-    except Exception as e:
-        logger.error(f"분석 중 오류 발생: {str(e)}")
-        return jsonify({'error': str(e)}), 500
 
 def split_vtt_content(content, chunk_size=5000):
     """VTT 내용을 청크로 분할"""
