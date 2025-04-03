@@ -49,10 +49,13 @@ def vtt_analysis():
 def chat_analysis():
     return render_template('chat_analysis.html')
 
+@app.route('/analyze_chat', methods=['POST'])
+@app.route('/analyze_vtt', methods=['POST'])
 @app.route('/analyze', methods=['POST'])
 def analyze():
     try:
         logger.info("분석 요청 수신")
+        logger.info(f"요청 URL: {request.url}")
         logger.info(f"Content-Type: {request.content_type}")
         logger.info(f"Form data: {request.form}")
         logger.info(f"Files: {request.files}")
