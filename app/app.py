@@ -675,15 +675,20 @@ def format_analysis_result(content):
 
     # 종합 제언 섹션
     if categories['종합 제언']:
+        # 종합 제언을 하나의 문단으로 합치기
+        recommendations = []
+        for item in categories['종합 제언']:
+            if item.startswith('- '):
+                recommendations.append(item[2:].strip())
+            else:
+                recommendations.append(item.strip())
+        
         html_content.extend([
             '<div class="category-section">',
             '    <h2 class="category-title">종합 제언</h2>',
-            '    <ul class="analysis-list">'
-        ])
-        for item in categories['종합 제언']:
-            html_content.append(f'        <li>{item}</li>')
-        html_content.extend([
-            '    </ul>',
+            '    <div class="main-topics">',
+            f'        <p>{". ".join(recommendations)}</p>',
+            '    </div>',
             '</div>'
         ])
     
