@@ -6,11 +6,7 @@ from datetime import datetime
 import json
 import logging
 import time
-import requests
-import sys
-
-# 재귀 깊이 제한 증가
-sys.setrecursionlimit(10000)
+from anthropic import Anthropic
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -30,49 +26,45 @@ api_key = os.getenv('ANTHROPIC_API_KEY')
 if not api_key:
     raise ValueError("ANTHROPIC_API_KEY 환경 변수가 설정되지 않았습니다.")
 
+# Anthropic 클라이언트 초기화
+anthropic = Anthropic(api_key=api_key)
+
 def split_content(content, max_length=800):
-    """콘텐츠를 작은 청크로 분할 (단순한 방식)"""
+    """콘텐츠를 작은 청크로 분할"""
     chunks = []
     current_chunk = ""
     
-    # 단순히 길이 기준으로 분할
-    for i in range(0, len(content), max_length):
-        chunk = content[i:i+max_length]
-        chunks.append(chunk)
+    # 문장 단위로 분할
+    sentences = content.replace('\n', ' ').split('. ')
+    
+    for sentence in sentences:
+        if not sentence.strip():
+            continue
+            
+        if len(current_chunk) + len(sentence) > max_length:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            current_chunk = sentence
+        else:
+            current_chunk += '. ' + sentence if current_chunk else sentence
+    
+    if current_chunk:
+        chunks.append(current_chunk.strip())
     
     return chunks
 
 def call_claude_api(prompt):
-    """Claude API 직접 호출"""
-    headers = {
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json"
-    }
-    
-    data = {
-        "prompt": prompt,
-        "model": "claude-instant-1.2",
-        "max_tokens_to_sample": 1500,
-        "temperature": 0.7,
-        "stop_sequences": ["\n\nHuman:"]
-    }
-    
+    """Claude API 호출"""
     try:
-        response = requests.post(
-            "https://api.anthropic.com/v1/complete",
-            headers=headers,
-            json=data,
-            timeout=30
+        completion = anthropic.completions.create(
+            model="claude-instant-1.2",
+            max_tokens_to_sample=1500,
+            temperature=0.7,
+            prompt=prompt
         )
+        return completion.completion
         
-        if response.status_code == 200:
-            return response.json()
-        else:
-            logger.error(f"API 응답 오류: {response.status_code} - {response.text}")
-            raise Exception(f"API 응답 오류: {response.status_code}")
-            
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         logger.error(f"API 호출 실패: {str(e)}")
         raise
 
@@ -88,24 +80,24 @@ def analyze_content_in_chunks(content, analysis_type='vtt'):
             logger.info(f"Processing chunk {i}/{total_chunks}")
             
             try:
-                result = call_claude_api(
-                    prompt=f"\n\nHuman: 당신은 {'줌 회의록' if analysis_type == 'vtt' else '채팅 로그'} 분석 전문가입니다. "
-                    f"다음은 전체 {'회의록' if analysis_type == 'vtt' else '채팅'}의 {i}/{total_chunks} 부분입니다. "
-                    f"이 부분을 분석해주세요:\n\n{chunk}\n\n"
-                    f"다음 형식으로 분석 결과를 제공해주세요:\n\n"
-                    f"# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n"
-                    f"# 주요 키워드\n[이 부분의 주요 키워드들]\n\n"
-                    f"{'# 중요 포인트' if analysis_type == 'vtt' else '# 대화 분위기'}\n"
-                    f"[{'이 부분에서 특별히 주목할 만한 내용' if analysis_type == 'vtt' else '이 부분의 대화 톤과 분위기'}]\n\n"
-                    f"Assistant:"
-                )
-                all_results.append(result['completion'])
-                time.sleep(5)  # API 호출 간격
+                prompt = f"\n\nHuman: 당신은 {'줌 회의록' if analysis_type == 'vtt' else '채팅 로그'} 분석 전문가입니다. "
+                prompt += f"다음은 전체 {'회의록' if analysis_type == 'vtt' else '채팅'}의 {i}/{total_chunks} 부분입니다. "
+                prompt += f"이 부분을 분석해주세요:\n\n{chunk}\n\n"
+                prompt += f"다음 형식으로 분석 결과를 제공해주세요:\n\n"
+                prompt += f"# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n"
+                prompt += f"# 주요 키워드\n[이 부분의 주요 키워드들]\n\n"
+                prompt += f"{'# 중요 포인트' if analysis_type == 'vtt' else '# 대화 분위기'}\n"
+                prompt += f"[{'이 부분에서 특별히 주목할 만한 내용' if analysis_type == 'vtt' else '이 부분의 대화 톤과 분위기'}]\n\n"
+                prompt += f"Assistant:"
+                
+                result = call_claude_api(prompt)
+                all_results.append(result)
+                time.sleep(3)  # API 호출 간격
                 
             except Exception as e:
                 logger.error(f"Failed to process chunk {i}: {str(e)}")
                 all_results.append(f"[이 부분 처리 중 오류 발생: {str(e)}]")
-                time.sleep(10)  # 오류 발생 시 대기 시간
+                time.sleep(5)  # 오류 발생 시 대기 시간
         
         if not all_results:
             return "분석에 실패했습니다. 네트워크 연결을 확인해주세요."
