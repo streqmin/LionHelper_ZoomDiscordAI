@@ -540,15 +540,20 @@ def format_analysis_result(content):
     
     # 주요 대화 주제 섹션
     if categories['주요 대화 주제']:
+        # 주요 대화 주제를 하나의 문단으로 합치기
+        main_topics = []
+        for item in categories['주요 대화 주제']:
+            if item.startswith('- '):
+                main_topics.append(item[2:].strip())
+            else:
+                main_topics.append(item.strip())
+        
         html_content.extend([
             '<div class="category-section">',
             '    <h2 class="category-title">주요 대화 주제</h2>',
-            '    <ul class="content-list">'
-        ])
-        for item in categories['주요 대화 주제']:
-            html_content.append(f'        <li>{item}</li>')
-        html_content.extend([
-            '    </ul>',
+            '    <div class="main-topics">',
+            f'        <p>{". ".join(main_topics)}</p>',
+            '    </div>',
             '</div>'
         ])
     
