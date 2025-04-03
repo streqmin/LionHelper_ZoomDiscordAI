@@ -202,31 +202,57 @@ def analyze_vtt():
 def analyze_chat():
     try:
         content = None
+        logger.info("Received chat analysis request")
+        logger.info(f"Content-Type: {request.content_type}")
+        logger.info(f"Form data: {request.form}")
+        logger.info(f"Files: {request.files}")
         
         # JSON 형식 처리
         if request.is_json:
+            logger.info("Processing JSON request")
             data = request.get_json()
+            logger.info(f"Received JSON data: {data}")
             if data and 'content' in data:
                 content = data['content']
+                logger.info("Successfully extracted content from JSON")
         
         # form-data 형식 처리
         elif 'content' in request.form:
+            logger.info("Processing form-data request")
             content = request.form['content']
+            logger.info("Successfully extracted content from form")
         
         # 파일 업로드 처리
         elif 'file' in request.files:
+            logger.info("Processing file upload")
             file = request.files['file']
             if file.filename != '':
                 filename = secure_filename(file.filename)
                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 file.save(filepath)
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    content = f.read()
+                logger.info(f"File saved to {filepath}")
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    logger.info("Successfully read file content")
+                except Exception as e:
+                    logger.error(f"Error reading file: {str(e)}")
+                    return jsonify({'error': f'파일 읽기 오류: {str(e)}'}), 400
         
         if not content:
-            return jsonify({'error': '채팅 내용이 없습니다.'}), 400
+            logger.error("No content found in request")
+            return jsonify({'error': '채팅 내용이 없습니다. content 필드를 확인해주세요.'}), 400
+        
+        if not isinstance(content, str):
+            logger.error(f"Invalid content type: {type(content)}")
+            return jsonify({'error': '채팅 내용은 문자열이어야 합니다.'}), 400
+        
+        if len(content.strip()) == 0:
+            logger.error("Empty content received")
+            return jsonify({'error': '채팅 내용이 비어있습니다.'}), 400
         
         logger.info("Starting chat analysis with Claude API")
+        logger.info(f"Content length: {len(content)} characters")
         
         # 채팅 내용 분석
         result = analyze_content_in_chunks(content, 'chat')
@@ -238,6 +264,7 @@ def analyze_chat():
         with open(result_path, 'w', encoding='utf-8') as f:
             f.write(result)
         
+        logger.info("Analysis completed successfully")
         return jsonify({
             'message': '분석이 완료되었습니다.',
             'result': result,
