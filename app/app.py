@@ -294,9 +294,16 @@ def format_analysis_result(content):
             not '발견되지 않' in item and
             not '확인되지 않' in item and
             not '포함되어 있지 않' in item and
-            not '위험한 내용이 없' in item):
-            risk_items.append(item)
-            has_real_risks = True
+            not '위험한 내용이 없' in item and
+            not '특별한 위험' in item and
+            not '부적절한 내용이 없' in item):
+            # 실제 위험 발언인 경우에만 추가
+            if not any(safe_phrase in item.lower() for safe_phrase in [
+                '없습니다', '발견되지 않', '확인되지 않', '포함되어 있지 않',
+                '감지되지 않', '발견할 수 없', '문제가 없'
+            ]):
+                risk_items.append(item)
+                has_real_risks = True
     
     if has_real_risks and risk_items:  # 실제 위험 발언이 있는 경우에만
         html_content.extend([
