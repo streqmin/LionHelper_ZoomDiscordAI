@@ -7,8 +7,6 @@ import json
 import logging
 import time
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -28,42 +26,29 @@ api_key = os.getenv('ANTHROPIC_API_KEY')
 if not api_key:
     raise ValueError("ANTHROPIC_API_KEY 환경 변수가 설정되지 않았습니다.")
 
-def create_session():
-    """HTTP 세션 생성"""
-    session = requests.Session()
-    retry_strategy = Retry(
-        total=3,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504]
-    )
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
-    return session
-
 def split_content(content, max_length=800):
     """콘텐츠를 작은 청크로 분할"""
     if not content:
         return []
-        
-    # 단순히 길이 기준으로 분할
-    chunks = []
-    start = 0
-    content_length = len(content)
     
-    while start < content_length:
-        end = start + max_length
-        if end < content_length:
-            # 문장 끝이나 마침표를 찾아서 자연스럽게 분할
-            pos = content.rfind('. ', start, end)
-            if pos != -1:
-                end = pos + 1
-        chunks.append(content[start:end].strip())
-        start = end
+    chunks = []
+    current_chunk = ""
+    sentences = content.split('. ')
+    
+    for sentence in sentences:
+        if len(current_chunk) + len(sentence) < max_length:
+            current_chunk += sentence + '. '
+        else:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            current_chunk = sentence + '. '
+    
+    if current_chunk:
+        chunks.append(current_chunk.strip())
     
     return chunks
 
-def call_claude_api(session, prompt):
+def call_claude_api(prompt):
     """Claude API 호출"""
     url = "https://api.anthropic.com/v1/complete"
     headers = {
@@ -81,11 +66,11 @@ def call_claude_api(session, prompt):
     }
     
     try:
-        response = session.post(url, headers=headers, json=data, timeout=30)
+        response = requests.post(url, headers=headers, json=data, timeout=30)
         response.raise_for_status()
         return response.json()['completion']
-    except requests.exceptions.RequestException as e:
-        logger.error(f"API 요청 실패: {str(e)}")
+    except Exception as e:
+        logger.error(f"API 호출 실패: {str(e)}")
         raise
 
 def analyze_content_in_chunks(content, analysis_type='vtt'):
@@ -96,26 +81,23 @@ def analyze_content_in_chunks(content, analysis_type='vtt'):
         logger.info(f"Split content into {total_chunks} chunks")
         
         all_results = []
-        session = create_session()
         
         for i, chunk in enumerate(chunks, 1):
             logger.info(f"Processing chunk {i}/{total_chunks}")
             
-            # 프롬프트 생성
-            prompt = "\n\nHuman: " + \
-                    f"당신은 {'줌 회의록' if analysis_type == 'vtt' else '채팅 로그'} 분석 전문가입니다. " + \
-                    f"다음은 전체 {'회의록' if analysis_type == 'vtt' else '채팅'}의 {i}/{total_chunks} 부분입니다.\n\n" + \
-                    f"{chunk}\n\n" + \
-                    "다음 형식으로 분석 결과를 제공해주세요:\n\n" + \
-                    "# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n" + \
-                    "# 주요 키워드\n[이 부분의 주요 키워드들]\n\n" + \
-                    f"{'# 중요 포인트' if analysis_type == 'vtt' else '# 대화 분위기'}\n" + \
-                    f"[{'이 부분에서 특별히 주목할 만한 내용' if analysis_type == 'vtt' else '이 부분의 대화 톤과 분위기'}]\n\n" + \
-                    "Assistant:"
+            prompt = f"\n\nHuman: 당신은 {'줌 회의록' if analysis_type == 'vtt' else '채팅 로그'} 분석 전문가입니다. "
+            prompt += f"다음은 전체 {'회의록' if analysis_type == 'vtt' else '채팅'}의 {i}/{total_chunks} 부분입니다.\n\n"
+            prompt += f"{chunk}\n\n"
+            prompt += "다음 형식으로 분석 결과를 제공해주세요:\n\n"
+            prompt += "# 이 부분의 주요 내용\n[핵심 내용 요약]\n\n"
+            prompt += "# 주요 키워드\n[이 부분의 주요 키워드들]\n\n"
+            prompt += f"{'# 중요 포인트' if analysis_type == 'vtt' else '# 대화 분위기'}\n"
+            prompt += f"[{'이 부분에서 특별히 주목할 만한 내용' if analysis_type == 'vtt' else '이 부분의 대화 톤과 분위기'}]\n\n"
+            prompt += "Assistant:"
             
             for attempt in range(3):
                 try:
-                    result = call_claude_api(session, prompt)
+                    result = call_claude_api(prompt)
                     all_results.append(result)
                     time.sleep(8)
                     break
@@ -125,7 +107,6 @@ def analyze_content_in_chunks(content, analysis_type='vtt'):
                         wait_time = 5 * (2 ** attempt)
                         logger.info(f"재시도 대기 중... {wait_time}초")
                         time.sleep(wait_time)
-                        session = create_session()  # 새로운 세션 생성
                     else:
                         all_results.append(f"[이 부분 처리 중 오류 발생: {str(e)}]")
                         time.sleep(15)
