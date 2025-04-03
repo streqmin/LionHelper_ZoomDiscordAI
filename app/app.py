@@ -156,39 +156,152 @@ def analyze():
 def process_curriculum_file(filepath):
     """커리큘럼 파일(엑셀 또는 JSON)을 처리하여 내용을 반환"""
     ext = filepath.rsplit('.', 1)[1].lower()
-    if ext in ['xlsx', 'xls']:
-        import pandas as pd
-        df = pd.read_excel(filepath)
-        return df.to_dict('records')
-    elif ext == 'json':
-        import json
-        with open(filepath, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    else:
-        raise ValueError('지원하지 않는 파일 형식입니다')
+    try:
+        if ext in ['xlsx', 'xls']:
+            import pandas as pd
+            df = pd.read_excel(filepath)
+            
+            # 필수 컬럼 확인
+            required_columns = ['과목명', '세부내용']
+            if not all(col in df.columns for col in required_columns):
+                raise ValueError('엑셀 파일에 필수 컬럼(과목명, 세부내용)이 없습니다.')
+            
+            # NaN 값을 빈 문자열로 변환
+            df = df.fillna('')
+            
+            # 과목별로 세부내용 정리
+            result = []
+            for subject in df['과목명'].unique():
+                if subject:  # 과목명이 비어있지 않은 경우만
+                    details = df[df['과목명'] == subject]['세부내용'].tolist()
+                    # 빈 문자열 제외
+                    details = [d for d in details if d]
+                    if details:  # 세부내용이 있는 경우만
+                        result.append({
+                            '과목명': subject,
+                            '세부내용': details
+                        })
+            return result
+            
+        elif ext == 'json':
+            import json
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                # JSON 형식 검증
+                if not isinstance(data, list):
+                    raise ValueError('JSON 파일은 객체의 배열이어야 합니다.')
+                
+                result = []
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    
+                    subject = item.get('subject') or item.get('과목명')
+                    details = item.get('details') or item.get('세부내용')
+                    
+                    if subject and details:
+                        if isinstance(details, str):
+                            details = [details]
+                        elif not isinstance(details, list):
+                            continue
+                            
+                        result.append({
+                            '과목명': subject,
+                            '세부내용': [d for d in details if d]
+                        })
+                return result
+        else:
+            raise ValueError('지원하지 않는 파일 형식입니다')
+            
+    except Exception as e:
+        logger.error(f"커리큘럼 파일 처리 중 오류 발생: {str(e)}")
+        raise ValueError(f"커리큘럼 파일 처리 중 오류가 발생했습니다: {str(e)}")
 
 def analyze_curriculum_match(vtt_result, curriculum_content):
     """VTT 분석 결과와 커리큘럼을 매칭하여 분석"""
-    # 커리큘럼에서 과목명 추출
+    # 커리큘럼에서 과목명과 세부내용 추출
     subjects = []
-    for item in curriculum_content:
-        if 'subject' in item:  # JSON 형식
-            subjects.append(item['subject'])
-        elif '과목명' in item:  # 엑셀 형식
-            subjects.append(item['과목명'])
+    subject_details = {}
     
-    # 중복 제거 및 정렬
-    subjects = sorted(list(set(subjects)))
+    for item in curriculum_content:
+        subject = None
+        details = None
+        
+        if 'subject' in item and 'details' in item:  # JSON 형식
+            subject = item['subject']
+            details = item['details']
+        elif '과목명' in item and '세부내용' in item:  # 엑셀 형식
+            subject = item['과목명']
+            details = item['세부내용']
+            
+        if subject and details:
+            if subject not in subjects:
+                subjects.append(subject)
+                subject_details[subject] = []
+            subject_details[subject].append(details)
+    
+    # VTT 내용 분석
+    vtt_sections = vtt_result.split('---')
+    vtt_content = ""
+    for section in vtt_sections:
+        if '주요 내용' in section or '분석' in section:
+            vtt_content += section.replace('# 주요 내용', '').replace('# 분석', '')
     
     # 각 과목별 매칭 분석
     matched_subjects = []
     details_matches = {}
     
     for subject in subjects:
-        # 실제 매칭 로직은 여기에 구현
-        # 임시로 랜덤한 달성도 생성
-        import random
-        achievement_rate = random.randint(60, 100)
+        # 과목별 매칭 점수 계산
+        subject_score = 0
+        total_details = len(subject_details[subject])
+        matched_details = []
+        matches_status = []
+        
+        # GPT API를 사용하여 각 세부내용과 VTT 내용의 매칭 분석
+        prompt = f"""
+다음 강의 내용이 특정 교과목의 세부내용들과 얼마나 일치하는지 분석해주세요.
+
+교과목: {subject}
+세부내용:
+{chr(10).join(f"- {detail}" for detail in subject_details[subject])}
+
+강의 내용:
+{vtt_content}
+
+각 세부내용별로 강의 내용과의 일치 여부를 판단하고, 일치하는 경우 관련된 부분을 구체적으로 설명해주세요.
+응답 형식:
+1. 전체 일치도: (0-100 사이의 숫자)
+2. 세부내용 분석:
+- [일치/불일치] (세부내용): (구체적인 설명)
+"""
+        
+        try:
+            analysis = api_client.analyze_text(prompt, 'curriculum')
+            
+            # 분석 결과 파싱
+            lines = analysis.split('\n')
+            achievement_rate = 0
+            
+            for line in lines:
+                if line.startswith('1. 전체 일치도:'):
+                    try:
+                        achievement_rate = int(re.search(r'\d+', line).group())
+                    except:
+                        achievement_rate = 0
+                elif line.startswith('- [일치]') or line.startswith('- [불일치]'):
+                    is_match = line.startswith('- [일치]')
+                    detail_text = line[line.find(']')+1:].strip()
+                    if ':' in detail_text:
+                        detail_text = detail_text.split(':', 1)[0].strip()
+                    matched_details.append(detail_text)
+                    matches_status.append(is_match)
+        
+        except Exception as e:
+            logger.error(f"과목 {subject} 분석 중 오류 발생: {str(e)}")
+            achievement_rate = 0
+            matched_details = subject_details[subject]
+            matches_status = [False] * len(matched_details)
         
         matched_subjects.append({
             'name': subject,
@@ -196,8 +309,8 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
         })
         
         details_matches[subject] = {
-            'matches': [True, False],  # 실제 매칭 결과로 대체 필요
-            'detail_texts': [f'{subject}의 세부내용 1', f'{subject}의 세부내용 2']
+            'matches': matches_status,
+            'detail_texts': matched_details
         }
     
     return {
