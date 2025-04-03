@@ -276,28 +276,35 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
     details_matches = {}
     
     for subject in subjects:
-        # 과목별 매칭 점수 계산
-        subject_score = 0
-        total_details = len(subject_details[subject])
-        matched_details = []
-        matches_status = []
-        
         # GPT API를 사용하여 각 세부내용과 VTT 내용의 매칭 분석
         prompt = f"""
-다음 강의 내용이 특정 교과목의 세부내용들과 얼마나 일치하는지 분석해주세요.
+강의 내용이 특정 교과목의 학습 주제 및 세부내용과 얼마나 연관되어 있는지 분석해주세요.
+단순히 키워드가 일치하는지가 아니라, 의미적 연관성과 학습 목표 달성 여부를 중점적으로 평가해주세요.
 
-교과목: {subject}
-세부내용:
+[교과목 정보]
+교과목명: {subject}
+학습 주제 및 세부내용:
 {chr(10).join(f"- {detail}" for detail in subject_details[subject])}
 
-강의 내용:
+[강의 내용 요약]
 {vtt_content}
 
-각 세부내용별로 강의 내용과의 일치 여부를 판단하고, 일치하는 경우 관련된 부분을 구체적으로 설명해주세요.
-응답 형식:
-1. 전체 일치도: (0-100 사이의 숫자)
+다음 형식으로 분석해주세요:
+1. 전체 달성도 (0-100): 
+   - 이 강의가 해당 교과목의 학습 목표를 얼마나 달성했는지를 백분율로 표현
+   - 일부 주제만 다루더라도 그 내용이 충실하다면 높은 점수 부여 가능
+   - 키워드 일치가 아닌 실질적인 학습 내용의 연관성 기준
+
 2. 세부내용 분석:
-- [일치/불일치] (세부내용): (구체적인 설명)
+각 세부내용별로 다음 형식으로 분석:
+- [관련도 높음/중간/낮음] (세부내용): (구체적인 근거)
+  - 강의에서 다룬 내용이 이 세부내용과 어떻게 연관되는지 설명
+  - 직접적인 언급이 없더라도 연관된 개념이나 응용사례를 다룬 경우 포함
+
+주의사항:
+- 형식적인 단어 매칭이 아닌 실질적인 학습 내용의 연관성을 평가해주세요
+- 강의가 해당 교과목의 일부 주제만 다루더라도, 그 내용이 충실하다면 높은 점수를 줄 수 있습니다
+- 직접적인 용어가 사용되지 않더라도, 관련 개념이나 응용사례를 다루고 있다면 연관성이 있다고 판단해주세요
 """
         
         try:
@@ -308,18 +315,19 @@ def analyze_curriculum_match(vtt_result, curriculum_content):
             achievement_rate = 0
             
             for line in lines:
-                if line.startswith('1. 전체 일치도:'):
+                if '전체 달성도' in line:
                     try:
                         achievement_rate = int(re.search(r'\d+', line).group())
                     except:
                         achievement_rate = 0
-                elif line.startswith('- [일치]') or line.startswith('- [불일치]'):
-                    is_match = line.startswith('- [일치]')
+                elif line.startswith('- [관련도'):
+                    is_match = '높음' in line or '중간' in line
                     detail_text = line[line.find(']')+1:].strip()
                     if ':' in detail_text:
                         detail_text = detail_text.split(':', 1)[0].strip()
-                    matched_details.append(detail_text)
-                    matches_status.append(is_match)
+                    if detail_text not in matched_details:
+                        matched_details.append(detail_text)
+                        matches_status.append(is_match)
         
         except Exception as e:
             logger.error(f"과목 {subject} 분석 중 오류 발생: {str(e)}")
