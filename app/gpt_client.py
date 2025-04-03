@@ -11,9 +11,19 @@ logger = logging.getLogger(__name__)
 
 class GPTAPIClient:
     def __init__(self, api_key):
+        """GPT API 클라이언트 초기화"""
+        if not api_key:
+            raise ValueError("API 키가 제공되지 않았습니다.")
+            
         self.logger = logging.getLogger(__name__)
         self.model = "gpt-3.5-turbo"
-        self.client = OpenAI(api_key=api_key)
+        
+        # OpenAI 클라이언트 초기화 (프록시 설정 제거)
+        self.client = OpenAI(
+            api_key=api_key,
+            http_client=None  # 기본 HTTP 클라이언트 사용
+        )
+        
         self.logger.info(f"GPTAPIClient 초기화 완료 (모델: {self.model})")
 
     @retry(
