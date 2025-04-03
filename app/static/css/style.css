@@ -441,4 +441,61 @@ th {
     color: #2c3e50;
     line-height: 1.7;
     white-space: pre-line;
+}
+
+/* VTT 분석 결과 스타일 */
+.analysis-result {
+    background-color: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    margin-bottom: 30px;
+}
+
+.category-section {
+    margin-bottom: 30px;
+}
+
+.category-section:last-child {
+    margin-bottom: 0;
+}
+
+.category-title {
+    color: #ff6b2b;
+    font-size: 1.5em;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #ff6b2b;
+}
+
+.content-list,
+.keyword-list,
+.analysis-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.content-list li,
+.analysis-list li {
+    background-color: #fff5e6;
+    border-left: 4px solid #ff6b2b;
+    margin-bottom: 10px;
+    padding: 12px 15px;
+    border-radius: 0 8px 8px 0;
+    line-height: 1.5;
+}
+
+.keyword-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.keyword-list li {
+    background-color: #ff6b2b;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.9em;
 } 

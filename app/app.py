@@ -179,9 +179,14 @@ def format_analysis_result(content):
     sections = content.split('---')
     logger.info(f"섹션 분할 결과: {sections}")
     
-    html_content = []
-    section_number = 1
+    # 카테고리별로 내용을 저장할 딕셔너리
+    categories = {
+        '주요 내용': [],
+        '키워드': [],
+        '분석': []
+    }
     
+    # 모든 섹션의 내용을 카테고리별로 분류
     for section in sections:
         if not section.strip():
             continue
@@ -190,70 +195,63 @@ def format_analysis_result(content):
         
         # 각 섹션의 내용을 파싱
         lines = section.strip().split('\n')
-        current_part = None
-        parts = {'주요 내용': [], '키워드': [], '분석': []}
+        current_category = None
         
         for line in lines:
             line = line.strip()
             if line.startswith('# '):
-                current_part = line[2:].strip()  # '#' 제거
+                current_category = line[2:].strip()  # '#' 제거
                 continue
-            if line and current_part in parts:
-                parts[current_part].append(line)
-        
-        # HTML 생성
-        if any(parts.values()):
-            section_html = [
-                '<div class="summary-section">',
-                f'    <h2><span class="section-number">{section_number}.</span>섹션 {section_number}</h2>'
-            ]
-            
-            # 주요 내용
-            if parts['주요 내용']:
-                section_html.extend([
-                    '    <div class="subsection">',
-                    f'        <div class="subsection-title">',
-                    f'            <span class="section-number">{section_number}.1</span>주요 내용',
-                    '        </div>',
-                    '        <ul>',
-                    f'            {format_list_items(chr(10).join(parts["주요 내용"]))}',
-                    '        </ul>',
-                    '    </div>'
-                ])
-            
-            # 키워드
-            if parts['키워드']:
-                section_html.extend([
-                    '    <div class="subsection">',
-                    f'        <div class="subsection-title">',
-                    f'            <span class="section-number">{section_number}.2</span>키워드',
-                    '        </div>',
-                    '        <ul>',
-                    f'            {format_list_items(chr(10).join(parts["키워드"]))}',
-                    '        </ul>',
-                    '    </div>'
-                ])
-            
-            # 분석
-            if parts['분석']:
-                section_html.extend([
-                    '    <div class="subsection">',
-                    f'        <div class="subsection-title">',
-                    f'            <span class="section-number">{section_number}.3</span>분석',
-                    '        </div>',
-                    '        <ul>',
-                    f'            {format_list_items(chr(10).join(parts["분석"]))}',
-                    '        </ul>',
-                    '    </div>'
-                ])
-            
-            section_html.append('</div>')
-            html_content.extend(section_html)
-            section_number += 1
+            if line and current_category in categories:
+                categories[current_category].append(line)
     
-    final_html = '\n'.join(html_content)
-    logger.info(f"최종 HTML 결과: {final_html}")
-    return final_html
+    # HTML 생성
+    html_content = ['<div class="analysis-result">']
+    
+    # 주요 내용 섹션
+    if categories['주요 내용']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">주요 내용</h2>',
+            '    <ul class="content-list">'
+        ])
+        for item in categories['주요 내용']:
+            html_content.append(f'        <li>{item}</li>')
+        html_content.extend([
+            '    </ul>',
+            '</div>'
+        ])
+    
+    # 키워드 섹션
+    if categories['키워드']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">키워드</h2>',
+            '    <ul class="keyword-list">'
+        ])
+        for item in categories['키워드']:
+            html_content.append(f'        <li>{item}</li>')
+        html_content.extend([
+            '    </ul>',
+            '</div>'
+        ])
+    
+    # 분석 섹션
+    if categories['분석']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">분석</h2>',
+            '    <ul class="analysis-list">'
+        ])
+        for item in categories['분석']:
+            html_content.append(f'        <li>{item}</li>')
+        html_content.extend([
+            '    </ul>',
+            '</div>'
+        ])
+    
+    html_content.append('</div>')
+    return '\n'.join(html_content)
 
 def format_list_items(content):
     """목록 항목을 HTML 형식으로 변환"""
