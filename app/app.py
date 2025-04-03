@@ -3,7 +3,7 @@ import logging
 from flask import Flask, request, jsonify, render_template
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
-from gpt_client import GPTAPIClient
+from app.gpt_client import GPTAPIClient
 
 # 환경 변수 로드
 load_dotenv()
