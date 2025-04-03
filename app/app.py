@@ -108,7 +108,7 @@ def analyze_chat():
             logger.info("채팅 분석 완료")
             
             # 결과를 HTML 형식으로 변환
-            chat_html = format_analysis_result(chat_result)
+            chat_html = format_analysis_result(chat_result, 'chat')
             return jsonify({
                 'chat_result': chat_html
             })
@@ -178,7 +178,7 @@ def analyze_vtt():
             curriculum_result = analyze_curriculum_match(combined_result, curriculum_content)
             
             # 결과를 HTML 형식으로 변환
-            vtt_html = format_analysis_result(combined_result)
+            vtt_html = format_analysis_result(combined_result, 'vtt')
             
             return jsonify({
                 'vtt_result': vtt_html,
@@ -465,13 +465,88 @@ def summarize_content(content_list, max_length=800):
         logger.error(f"재요약 중 오류 발생: {str(e)}")
         return content_list  # 오류 발생 시 원본 내용 반환
 
-def format_analysis_result(content):
-    """분석 결과를 HTML 형식으로 변환"""
-    logger.info(f"원본 분석 결과: {content}")
+def format_vtt_analysis(content):
+    """VTT 분석 결과를 HTML 형식으로 변환"""
+    logger.info(f"VTT 분석 결과 변환 시작: {content}")
     
     # 섹션을 분리 (--- 구분자 기준)
     sections = content.split('---')
-    logger.info(f"섹션 분할 결과: {sections}")
+    logger.info(f"VTT 섹션 분할 결과: {sections}")
+    
+    # HTML 생성
+    html_content = ['<div class="analysis-result">']
+    
+    # 각 섹션 처리
+    for section in sections:
+        if not section.strip():
+            continue
+            
+        logger.info(f"처리 중인 VTT 섹션: {section}")
+        
+        # 각 섹션의 내용을 파싱
+        lines = section.strip().split('\n')
+        current_category = None
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith('# '):
+                current_category = line[2:].strip()  # '#' 제거
+                continue
+            
+            # VTT 분석 결과 처리
+            if current_category == '주요 내용':
+                html_content.extend([
+                    '<div class="category-section">',
+                    '    <h2 class="category-title">주요 내용</h2>',
+                    '    <div class="main-topics">',
+                    f'        <p>{line}</p>',
+                    '    </div>',
+                    '</div>'
+                ])
+            elif current_category == '키워드':
+                html_content.extend([
+                    '<div class="category-section">',
+                    '    <h2 class="category-title">키워드</h2>',
+                    '    <div class="main-topics">',
+                    f'        <p>{line}</p>',
+                    '    </div>',
+                    '</div>'
+                ])
+            elif current_category == '분석':
+                html_content.extend([
+                    '<div class="category-section">',
+                    '    <h2 class="category-title">분석</h2>',
+                    '    <div class="main-topics">',
+                    f'        <p>{line}</p>',
+                    '    </div>',
+                    '</div>'
+                ])
+            elif current_category == '위험 발언':
+                html_content.extend([
+                    '<div class="category-section">',
+                    '    <h2 class="category-title">위험 발언</h2>',
+                    '    <div class="main-topics">',
+                    f'        <p>{line}</p>',
+                    '    </div>',
+                    '</div>'
+                ])
+    
+    html_content.append('</div>')
+    return '\n'.join(html_content)
+
+def format_chat_analysis(content):
+    """채팅 분석 결과를 HTML 형식으로 변환"""
+    logger.info(f"채팅 분석 결과 변환 시작: {content}")
+    
+    # 섹션을 분리 (--- 구분자 기준)
+    sections = content.split('---')
+    logger.info(f"채팅 섹션 분할 결과: {sections}")
+    
+    # HTML 생성
+    html_content = ['<div class="analysis-result">']
     
     # 카테고리별로 내용을 저장할 딕셔너리
     categories = {
@@ -500,9 +575,6 @@ def format_analysis_result(content):
         if not section.strip():
             continue
             
-        logger.info(f"처리 중인 섹션: {section}")
-        
-        # 각 섹션의 내용을 파싱
         lines = section.strip().split('\n')
         current_category = None
         current_subcategory = None
@@ -528,15 +600,12 @@ def format_analysis_result(content):
                     # 중복 제거를 위해 이미 있는 항목은 추가하지 않음
                     if line not in categories[current_category][current_subcategory]:
                         categories[current_category][current_subcategory].append(line)
-                    continue
+                continue
             
             # 다른 카테고리 처리
             if current_category in categories and isinstance(categories[current_category], list):
                 if line not in categories[current_category]:  # 중복 제거
                     categories[current_category].append(line)
-    
-    # HTML 생성
-    html_content = ['<div class="analysis-result">']
     
     # 주요 대화 주제 섹션
     if categories['주요 대화 주제']:
@@ -602,7 +671,7 @@ def format_analysis_result(content):
                 ])
         
         html_content.append('</div>')
-
+    
     # 개선 제안 섹션
     if any(categories['개선 제안'].values()):
         html_content.extend([
@@ -625,7 +694,7 @@ def format_analysis_result(content):
                 ])
         
         html_content.append('</div>')
-
+    
     # 위험 발언 및 주의사항 섹션
     risk_items = []
     has_real_risks = False
@@ -672,7 +741,7 @@ def format_analysis_result(content):
             '    </div>',
             '</div>'
         ])
-
+    
     # 종합 제언 섹션
     if categories['종합 제언']:
         # 종합 제언을 하나의 문단으로 합치기
@@ -694,6 +763,13 @@ def format_analysis_result(content):
     
     html_content.append('</div>')
     return '\n'.join(html_content)
+
+def format_analysis_result(content, analysis_type='chat'):
+    """분석 결과를 HTML 형식으로 변환"""
+    if analysis_type == 'vtt':
+        return format_vtt_analysis(content)
+    else:
+        return format_chat_analysis(content)
 
 def format_list_items(content):
     """목록 항목을 HTML 형식으로 변환"""
