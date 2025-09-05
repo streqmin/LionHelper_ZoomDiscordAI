@@ -1,7 +1,7 @@
 Flask==3.0.2
 Werkzeug==3.0.1
 gunicorn==21.2.0
-gevent==21.12.0
+gevent==24.2.1
 webvtt-py==0.4.6
 numpy==1.26.4
 pandas==2.2.1
@@ -10,4 +10,9 @@ python-dotenv==1.0.1
 requests==2.31.0
 httpx==0.24.1
 openai==1.3.0
-tenacity==8.2.3 
+tenacity==8.2.3
+rank-bm25==0.2.2
+rapidfuzz==3.9.0
+kiwipiepy==0.16.1
+kiwipiepy-model==0.21.0
+tqdm==4.67.1
