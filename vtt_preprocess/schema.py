@@ -105,5 +105,6 @@ class NonTopicBlock:
 class Outputs:
     segments: List[Segment]
     non_topic_blocks: List[NonTopicBlock]
+    topic_segments: List[Segment]
     corrections: List[CorrectionRecord]
     metrics: Dict[str, float]  # CER/WER 샘플, coverage Δ, coherence Δ, llm_calls 등

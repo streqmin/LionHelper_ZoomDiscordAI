@@ -101,11 +101,7 @@ def run_preprocess(
     )
 
     # (선택) 비주제 블록 제거
-    final_segments = (
-        _filter_segments_by_non_topic(new_segments, blocks)
-        if remove_non_topic_from_output
-        else new_segments
-    )
+    final_segments = _filter_segments_by_non_topic(new_segments, blocks)
 
     # 8) 산출물 저장
     # 8-1) VTT
@@ -154,6 +150,7 @@ def run_preprocess(
     return Outputs(
         segments=final_segments,
         non_topic_blocks=blocks,
+        topic_segments=final_segments,
         corrections=records,
         metrics=metrics,
     )

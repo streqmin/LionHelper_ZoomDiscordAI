@@ -1,13 +1,11 @@
 import os
 import logging
-import re
 from flask import Flask, request, jsonify, render_template, Response
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
-from app.gpt_client import GPTAPIClient
+from enhanced_gpt_client import EnhancedGPTClient
 import json
 import queue
-import threading
 
 # 환경 변수 로드
 load_dotenv()
@@ -32,11 +30,11 @@ try:
     api_key = os.getenv('OPENAI_API_KEY')
     if not api_key:
         raise ValueError("OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
-    api_client = GPTAPIClient(api_key)
+    # 강화된 GPT 클라이언트 (VTT 분석용)
+    enhanced_api_client = EnhancedGPTClient(api_key)
     
-    # API 연결 테스트
-    if not api_client.test_connection():
-        raise ConnectionError("API 연결 테스트 실패")
+    if not enhanced_api_client.test_connection():
+        raise ConnectionError("강화된 API 클라이언트 연결 테스트 실패")
     
     logger.info("API 클라이언트 초기화 및 연결 테스트 성공")
 except Exception as e:
@@ -104,7 +102,7 @@ def analyze_chat():
             logger.info(f"채팅 파일 내용 읽기 성공 (길이: {len(chat_content)} 문자)")
             
             # API를 통한 분석
-            chat_result = api_client.analyze_text(chat_content, 'chat')
+            chat_result = enhanced_api_client.analyze_chat(chat_content)
             logger.info("채팅 분석 완료")
             
             # 결과를 HTML 형식으로 변환
@@ -153,36 +151,59 @@ def analyze_vtt():
         vtt_file.save(vtt_filepath)
         curriculum_file.save(curriculum_filepath)
         
+        # 전처리 결과 저장을 위한 임시 디렉토리 생성
+        temp_output_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_output')
+        os.makedirs(temp_output_dir, exist_ok=True)
+        
         try:
-            # VTT 파일 내용 읽기
-            with open(vtt_filepath, 'r', encoding='utf-8') as f:
-                vtt_content = f.read()
+            update_progress("VTT 파일 전처리 중...")
             
-            # VTT 내용을 청크로 분할
-            chunks = split_vtt_content(vtt_content)
-            total_chunks = len(chunks)
+            # 1. VTT 전처리 파이프라인 실행
+            preprocess_result = enhanced_api_client.preprocess_vtt(
+                vtt_path=vtt_filepath,
+                curriculum_path=curriculum_filepath,
+                output_dir=temp_output_dir
+            )
             
-            # 각 청크 분석
-            analyzed_chunks = []
-            for i, chunk in enumerate(chunks, 1):
-                update_progress(f"청크 {i}/{total_chunks} 분석 중")
-                chunk_result = api_client.analyze_text(chunk, 'vtt')
-                analyzed_chunks.append(chunk_result)
+            update_progress("강의 내용 분석 중...")
             
-            update_progress("커리큘럼 매칭 분석 중")
-            # 커리큘럼 파일 처리
-            curriculum_content = process_curriculum_file(curriculum_filepath)
+            # 2. 비주제 블록 제거된 VTT로 강의 내용 요약
+            lecture_analysis = enhanced_api_client.analyze_lecture_content(
+                segments=preprocess_result['topic_segments']
+            )
             
-            # 분석 결과 통합 및 매칭
-            combined_result = combine_analysis_results(analyzed_chunks)
-            curriculum_result = analyze_curriculum_match(combined_result, curriculum_content)
+            update_progress("위험 발언 분석 중...")
+            
+            # 3. 교정된 VTT로 위험 발언 정확한 파악
+            risk_analysis = enhanced_api_client.analyze_risk_content(
+                segments=preprocess_result['segments']
+            )
+            
+            update_progress("커리큘럼 매칭 분석 중...")
+            
+            # 4. 토픽 유사도 기반 커리큘럼 매칭
+            curriculum_matching = enhanced_api_client.analyze_curriculum_matching(
+                segments=preprocess_result['segments'],
+                curriculum_path=curriculum_filepath
+            )
+            
+            update_progress("결과 포맷팅 중...")
             
             # 결과를 HTML 형식으로 변환
-            vtt_html = format_analysis_result(combined_result, 'vtt')
+            lecture_html = format_enhanced_analysis_result(lecture_analysis, 'lecture')
+            risk_html = format_enhanced_analysis_result(risk_analysis, 'risk')
+            curriculum_html = format_curriculum_matching_result(curriculum_matching)
+            
+            # 전처리 메트릭 정보 추가
+            preprocess_metrics = preprocess_result['metrics']
             
             return jsonify({
-                'vtt_result': vtt_html,
-                'curriculum_result': curriculum_result
+                'lecture_result': lecture_html,
+                'risk_result': risk_html,
+                'curriculum_result': curriculum_html,
+                'preprocess_metrics': preprocess_metrics,
+                'non_topic_blocks_count': len(preprocess_result['non_topic_blocks']),
+                'corrections_count': len(preprocess_result['corrections'])
             })
             
         finally:
@@ -190,11 +211,15 @@ def analyze_vtt():
             try:
                 os.remove(vtt_filepath)
                 os.remove(curriculum_filepath)
+                # 전처리 결과 파일들도 삭제
+                import shutil
+                if os.path.exists(temp_output_dir):
+                    shutil.rmtree(temp_output_dir)
             except Exception as e:
                 logger.warning(f"임시 파일 삭제 실패: {str(e)}")
                 
     except Exception as e:
-        logger.error(f"분석 중 오류 발생: {str(e)}")
+        logger.error(f"강화된 VTT 분석 중 오류 발생: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 def process_curriculum_file(filepath):
@@ -292,178 +317,7 @@ def process_curriculum_file(filepath):
         logger.error(f"커리큘럼 파일 처리 중 오류 발생: {str(e)}")
         raise ValueError(f"커리큘럼 파일 처리 중 오류가 발생했습니다: {str(e)}")
 
-def analyze_curriculum_match(vtt_result, curriculum_content):
-    """VTT 분석 결과와 커리큘럼을 매칭하여 분석"""
-    # 커리큘럼에서 과목명과 세부내용 추출
-    subjects = []
-    subject_details = {}
-    
-    for item in curriculum_content:
-        subject = None
-        details = None
-        
-        if 'subject' in item and 'details' in item:  # JSON 형식
-            subject = item['subject']
-            details = item['details']
-        elif '과목명' in item and '세부내용' in item:  # 엑셀 형식
-            subject = item['과목명']
-            details = item['세부내용']
-            
-        if subject and details:
-            if subject not in subjects:
-                subjects.append(subject)
-                subject_details[subject] = []
-            # 리스트가 아닌 경우 리스트로 변환
-            if isinstance(details, str):
-                details = [details]
-            subject_details[subject].extend(details)
-    
-    # VTT 내용 분석
-    vtt_sections = vtt_result.split('---')
-    vtt_content = ""
-    for section in vtt_sections:
-        if '주요 내용' in section or '분석' in section:
-            vtt_content += section.replace('# 주요 내용', '').replace('# 분석', '')
-    
-    # 각 과목별 매칭 분석
-    matched_subjects = []
-    details_matches = {}
-    
-    for subject in subjects:
-        # 과목별 세부내용 분석
-        matched_details = []
-        matches_status = []
-        total_score = 0
-        valid_details_count = 0
-        
-        # 각 세부내용에 대해 분석
-        for detail in subject_details[subject]:
-            if not detail or str(detail).strip() == 'nan':  # 빈 세부내용 제외
-                continue
-                
-            valid_details_count += 1
-            detail_str = str(detail).strip()
-            
-            # GPT API를 사용하여 세부내용과 VTT 내용의 매칭 분석
-            prompt = f"""
-다음 강의 내용이 특정 교과 세부내용을 다루고 있는지 분석해주세요.
 
-[분석할 교과 세부내용]
-{detail_str}
-
-[강의 내용]
-{vtt_content}
-
-다음 형식으로 응답해주세요:
-1. 달성도 (0-100): 
-   - 이 강의가 해당 세부내용을 얼마나 다루었는지를 백분율로 표현
-   - 직접적이고 상세한 설명이 있으면 90-100점
-   - 직접적인 설명이 있으면 70-89점
-   - 관련 개념이나 응용사례를 다룬 경우 50-69점
-   - 간접적으로 연관된 내용을 다룬 경우 30-49점
-   - 약간의 관련성만 있는 경우 10-29점
-   - 매우 간접적이거나 미미한 관련성이 있는 경우 1-9점
-   - 전혀 다루지 않은 경우 0점
-
-2. 판단 근거:
-   - 강의 내용 중 이 세부내용과 관련된 부분을 구체적으로 설명
-   - 직접적인 언급이 없더라도 연관된 개념이나 사례가 있다면 설명
-   - 매우 간접적이거나 미미한 관련성도 포함하여 설명
-
-주의사항:
-- 형식적인 단어 매칭이 아닌 실질적인 내용의 연관성을 평가해주세요
-- 세부내용의 핵심 개념이나 목표가 조금이라도 다뤄졌다면 매우 관대하게 평가해주세요
-- 직접적인 설명이 아니더라도, 관련 개념이나 응용 사례가 포함되어 있다면 점수를 부여해주세요
-- 매우 간접적이거나 미미한 관련성이라도 발견된다면 최소 1점 이상을 부여해주세요
-- 강의 내용이 해당 세부내용의 일부분만 다루더라도 그 부분에 대해 적절한 점수를 부여해주세요
-"""
-            
-            try:
-                analysis = api_client.analyze_text(prompt, 'curriculum')
-                
-                # 분석 결과 파싱
-                lines = analysis.split('\n')
-                detail_score = 0
-                
-                for line in lines:
-                    line = line.strip()
-                    if '달성도' in line:
-                        try:
-                            # 달성도 숫자를 더 정확하게 추출
-                            score_text = line.split(':')[1].strip() if ':' in line else line
-                            # 첫 번째 숫자 찾기
-                            score_match = re.search(r'\d+', score_text)
-                            if score_match:
-                                detail_score = int(score_match.group())
-                                # 점수가 100을 초과하는 경우 100으로 제한
-                                detail_score = min(100, max(0, detail_score))
-                                logger.info(f"추출된 달성도 점수: {detail_score} (원본 텍스트: {line})")
-                        except Exception as e:
-                            logger.error(f"달성도 점수 파싱 오류: {str(e)} (라인: {line})")
-                            detail_score = 0
-                        break
-                
-                # 세부내용 매칭 결과 저장
-                matched_details.append(detail_str)
-                matches_status.append(detail_score >= 20)  # 20% 이상이면 달성으로 판단
-                total_score += detail_score
-                logger.info(f"세부내용 '{detail_str}' 분석 완료 - 점수: {detail_score}")
-                
-            except Exception as e:
-                logger.error(f"세부내용 '{detail_str}' 분석 중 오류 발생: {str(e)}")
-                matched_details.append(detail_str)
-                matches_status.append(False)
-                total_score += 0
-        
-        # 과목 전체 달성도 계산
-        if valid_details_count > 0:
-            # 평균 점수 계산 시 소수점 아래는 버림
-            achievement_rate = int(total_score / valid_details_count)
-            # 최소 1%는 보장하되, 실제 점수가 있는 경우에만
-            achievement_rate = max(1, achievement_rate) if total_score > 0 else 0
-            logger.info(f"과목 '{subject}' 전체 달성도 계산: {achievement_rate}% (총점: {total_score}, 유효 항목 수: {valid_details_count})")
-        else:
-            achievement_rate = 0
-            logger.info(f"과목 '{subject}'의 유효한 세부내용이 없음")
-        
-        matched_subjects.append({
-            'name': subject,
-            'achievement_rate': achievement_rate
-        })
-        
-        details_matches[subject] = {
-            'matches': matches_status,
-            'detail_texts': matched_details
-        }
-    
-    return {
-        'matched_subjects': matched_subjects,
-        'details_matches': details_matches
-    }
-
-def summarize_content(content_list, max_length=800):
-    """여러 내용을 하나로 통합하여 재요약"""
-    if not content_list:
-        return []
-        
-    # 모든 내용을 하나의 문자열로 결합
-    combined_content = "\n".join(content_list)
-    
-    try:
-        # GPT API를 통해 재요약
-        prompt = f"""다음 내용을 {max_length}자 이내로 통합하여 요약해주세요. 
-        중요한 내용을 놓치지 않되, 반복되는 내용은 제거하고 핵심적인 내용만 남겨주세요.
-        각 요점은 새로운 줄에 '- '로 시작하도록 해주세요.
-        
-        내용:
-        {combined_content}"""
-        
-        summarized = api_client.analyze_text(prompt, 'summarize')
-        # 결과를 리스트로 변환
-        return [line.strip()[2:] for line in summarized.split('\n') if line.strip().startswith('- ')]
-    except Exception as e:
-        logger.error(f"재요약 중 오류 발생: {str(e)}")
-        return content_list  # 오류 발생 시 원본 내용 반환
 
 def format_vtt_analysis(content):
     """VTT 분석 결과를 HTML 형식으로 변환"""
@@ -821,6 +675,316 @@ def format_analysis_result(content, analysis_type='chat'):
         return format_vtt_analysis(content)
     else:
         return format_chat_analysis(content)
+
+def format_enhanced_analysis_result(content, analysis_type='lecture'):
+    """강화된 분석 결과를 HTML 형식으로 변환"""
+    if analysis_type == 'lecture':
+        return format_lecture_analysis(content)
+    elif analysis_type == 'risk':
+        return format_risk_analysis(content)
+    else:
+        return format_chat_analysis(content)
+
+def format_lecture_analysis(content):
+    """강의 내용 분석 결과를 HTML 형식으로 변환"""
+    logger.info(f"강의 분석 결과 변환 시작: {content}")
+    
+    # 섹션을 분리 (--- 구분자 기준)
+    sections = content.split('---')
+    logger.info(f"강의 섹션 분할 결과: {sections}")
+    
+    # HTML 생성
+    html_content = ['<div class="analysis-result">']
+    
+    # 각 섹션의 내용을 저장할 딕셔너리
+    lecture_sections = {
+        '주요 내용': [],
+        '키워드': [],
+        '분석': [],
+        '학습 포인트': []
+    }
+    
+    # 각 섹션 처리
+    for section in sections:
+        if not section.strip():
+            continue
+            
+        logger.info(f"처리 중인 강의 섹션: {section}")
+        
+        # 각 섹션의 내용을 파싱
+        lines = section.strip().split('\n')
+        current_category = None
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith('# '):
+                current_category = line[2:].strip()  # '#' 제거
+                continue
+            
+            # 강의 분석 결과 처리
+            if current_category in lecture_sections:
+                if line.startswith('- '):
+                    lecture_sections[current_category].append(line[2:].strip())
+                else:
+                    lecture_sections[current_category].append(line.strip())
+    
+    # 주요 내용 섹션
+    if lecture_sections['주요 내용']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">주요 내용</h2>',
+            '    <div class="main-topics">',
+            f'        <p>{". ".join(lecture_sections["주요 내용"])}</p>',
+            '    </div>',
+            '</div>'
+        ])
+    
+    # 키워드 섹션
+    if lecture_sections['키워드']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">키워드</h2>',
+            '    <div class="main-topics">',
+            '        <ul class="keyword-list">'
+        ])
+        for keyword in lecture_sections['키워드']:
+            html_content.append(f'            <li>{keyword}</li>')
+        html_content.extend([
+            '        </ul>',
+            '    </div>',
+            '</div>'
+        ])
+    
+    # 분석 섹션
+    if lecture_sections['분석']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">분석</h2>',
+            '    <div class="main-topics">',
+            f'        <p>{". ".join(lecture_sections["분석"])}</p>',
+            '    </div>',
+            '</div>'
+        ])
+    
+    # 학습 포인트 섹션
+    if lecture_sections['학습 포인트']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">학습 포인트</h2>',
+            '    <div class="main-topics">',
+            '        <ul class="learning-points">'
+        ])
+        for point in lecture_sections['학습 포인트']:
+            html_content.append(f'            <li>{point}</li>')
+        html_content.extend([
+            '        </ul>',
+            '    </div>',
+            '</div>'
+        ])
+    
+    html_content.append('</div>')
+    return '\n'.join(html_content)
+
+def format_risk_analysis(content):
+    """위험 발언 분석 결과를 HTML 형식으로 변환"""
+    logger.info(f"위험 발언 분석 결과 변환 시작: {content}")
+    
+    # 섹션을 분리 (--- 구분자 기준)
+    sections = content.split('---')
+    logger.info(f"위험 발언 섹션 분할 결과: {sections}")
+    
+    # HTML 생성
+    html_content = ['<div class="analysis-result">']
+    
+    # 각 섹션의 내용을 저장할 딕셔너리
+    risk_sections = {
+        '위험 발언 분석': [],
+        '주의사항': [],
+        '개선 제안': []
+    }
+    
+    # 각 섹션 처리
+    for section in sections:
+        if not section.strip():
+            continue
+            
+        logger.info(f"처리 중인 위험 발언 섹션: {section}")
+        
+        # 각 섹션의 내용을 파싱
+        lines = section.strip().split('\n')
+        current_category = None
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith('# '):
+                current_category = line[2:].strip()  # '#' 제거
+                continue
+            
+            # 위험 발언 분석 결과 처리
+            if current_category in risk_sections:
+                if line.startswith('- '):
+                    risk_sections[current_category].append(line[2:].strip())
+                else:
+                    risk_sections[current_category].append(line.strip())
+    
+    # 위험 발언 분석 섹션
+    has_real_risks = False
+    risk_items = []
+    
+    for risk in risk_sections['위험 발언 분석']:
+        # 위험 발언이 없다는 내용의 텍스트는 제외
+        if (risk and 
+            not risk.endswith('없습니다.') and 
+            not risk.startswith('특별한 주의사항이 없') and
+            not '발견되지 않' in risk and
+            not '확인되지 않' in risk and
+            not '포함되어 있지 않' in risk and
+            not '위험한 내용이 없' in risk and
+            not '특별한 위험' in risk and
+            not '부적절한 내용이 없' in risk):
+            risk_items.append(risk)
+            has_real_risks = True
+    
+    html_content.extend([
+        '<div class="category-section risk-section' + (' has-risks' if has_real_risks else ' no-risks') + '">',
+        '    <h2 class="category-title">위험 발언 분석</h2>',
+        '    <div class="risk-summary">',
+        '        <div class="risk-icon">' + ('⚠️' if has_real_risks else '✅') + '</div>',
+        '        <p>' + ('다음과 같은 위험 발언이 감지되었습니다.' if has_real_risks else '위험 발언이 감지되지 않았습니다.') + '</p>',
+        '    </div>'
+    ])
+    
+    if has_real_risks:
+        html_content.extend([
+            '    <ul class="risk-list">'
+        ])
+        for risk in risk_items:
+            html_content.append(f'        <li>{risk}</li>')
+        html_content.append('    </ul>')
+    
+    html_content.append('</div>')
+    
+    # 주의사항 섹션
+    if risk_sections['주의사항']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">주의사항</h2>',
+            '    <div class="main-topics">',
+            '        <ul class="warning-list">'
+        ])
+        for warning in risk_sections['주의사항']:
+            html_content.append(f'            <li>{warning}</li>')
+        html_content.extend([
+            '        </ul>',
+            '    </div>',
+            '</div>'
+        ])
+    
+    # 개선 제안 섹션
+    if risk_sections['개선 제안']:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">개선 제안</h2>',
+            '    <div class="main-topics">',
+            '        <ul class="improvement-list">'
+        ])
+        for improvement in risk_sections['개선 제안']:
+            html_content.append(f'            <li>{improvement}</li>')
+        html_content.extend([
+            '        </ul>',
+            '    </div>',
+            '</div>'
+        ])
+    
+    html_content.append('</div>')
+    return '\n'.join(html_content)
+
+def format_curriculum_matching_result(curriculum_matching):
+    """커리큘럼 매칭 결과를 HTML 형식으로 변환"""
+    if 'error' in curriculum_matching:
+        return f'<div class="error-message"><p>{curriculum_matching["error"]}</p></div>'
+    
+    html_content = ['<div class="curriculum-matching-result">']
+    
+    # 토픽별 통계
+    topic_stats = curriculum_matching.get('topic_stats', {})
+    if topic_stats:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">토픽별 커버리지</h2>',
+            '    <div class="topic-stats">'
+        ])
+        
+        for topic, stats in topic_stats.items():
+            coverage = stats.get('coverage_percentage', 0)
+            avg_score = stats.get('average_score', 0)
+            segment_count = stats.get('segment_count', 0)
+            
+            html_content.extend([
+                f'        <div class="topic-item">',
+                f'            <div class="topic-name">{topic}</div>',
+                f'            <div class="topic-metrics">',
+                f'                <span class="coverage">커버리지: {coverage:.1f}%</span>',
+                f'                <span class="score">평균 점수: {avg_score:.2f}</span>',
+                f'                <span class="segments">세그먼트: {segment_count}개</span>',
+                f'            </div>',
+                f'        </div>'
+            ])
+        
+        html_content.extend([
+            '    </div>',
+            '</div>'
+        ])
+    
+    # 상세 매칭 결과
+    segment_scores = curriculum_matching.get('segment_scores', [])
+    if segment_scores:
+        html_content.extend([
+            '<div class="category-section">',
+            '    <h2 class="category-title">세그먼트별 매칭 결과</h2>',
+            '    <div class="segment-matching">',
+            '        <table class="matching-table">',
+            '            <thead>',
+            '                <tr>',
+            '                    <th>시간</th>',
+            '                    <th>토픽</th>',
+            '                    <th>점수</th>',
+            '                    <th>내용 미리보기</th>',
+            '                </tr>',
+            '            </thead>',
+            '            <tbody>'
+        ])
+        
+        for seg_score in segment_scores[:20]:  # 상위 20개만 표시
+            start_time = f"{int(seg_score['start_sec']//60):02d}:{int(seg_score['start_sec']%60):02d}"
+            topic = seg_score.get('best_topic', '기타')
+            score = seg_score.get('best_score', 0)
+            preview = seg_score.get('text', '')[:100] + '...' if len(seg_score.get('text', '')) > 100 else seg_score.get('text', '')
+            
+            html_content.extend([
+                '                <tr>',
+                f'                    <td>{start_time}</td>',
+                f'                    <td>{topic}</td>',
+                f'                    <td>{score:.2f}</td>',
+                f'                    <td>{preview}</td>',
+                '                </tr>'
+            ])
+        
+        html_content.extend([
+            '            </tbody>',
+            '        </table>',
+            '    </div>',
+            '</div>'
+        ])
+    
+    html_content.append('</div>')
+    return '\n'.join(html_content)
 
 def format_list_items(content):
     """목록 항목을 HTML 형식으로 변환"""

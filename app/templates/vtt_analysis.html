@@ -358,6 +358,114 @@
             border-left: 4px solid #f44336;
             color: #d32f2f;
         }
+
+        /* 전처리 메트릭 스타일 */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-item {
+            background-color: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #e9ecef;
+        }
+
+        .metric-label {
+            font-size: 0.9rem;
+            color: #6c757d;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #ff6b2b;
+        }
+
+        .correction-methods {
+            background-color: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+
+        .correction-methods h3 {
+            color: #2c3e50;
+            margin-bottom: 1rem;
+        }
+
+        .correction-methods ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .correction-methods li {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .correction-methods li:last-child {
+            border-bottom: none;
+        }
+
+        /* 토픽 매칭 테이블 스타일 */
+        .matching-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        .matching-table th,
+        .matching-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .matching-table th {
+            background-color: #ff6b2b;
+            color: white;
+            font-weight: 500;
+        }
+
+        .matching-table tr:hover {
+            background-color: #fff5e6;
+        }
+
+        .topic-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+        }
+
+        .topic-item {
+            background-color: white;
+            padding: 1rem;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+        }
+
+        .topic-name {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+        }
+
+        .topic-metrics {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .topic-metrics span {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
     </style>
 </head>
 <body>
@@ -398,30 +506,28 @@
             <p id="analysis-progress" class="text-muted small"></p>
         </div>
 
-        <!-- VTT 분석 결과 -->
-        <div id="vttResultContainer" class="chat-report" style="display: none;">
-            <h2>강의 내용 요약 (VTT 기반)</h2>
-            <div id="vttAnalysis"></div>
+        <!-- 강화된 VTT 분석 결과 -->
+        <div id="lectureResultContainer" class="chat-report" style="display: none;">
+            <h2>강의 내용 분석 (비주제 블록 제거)</h2>
+            <div id="lectureAnalysis"></div>
+        </div>
+
+        <!-- 위험 발언 분석 결과 -->
+        <div id="riskResultContainer" class="chat-report" style="display: none;">
+            <h2>위험 발언 분석 (교정된 VTT 기반)</h2>
+            <div id="riskAnalysis"></div>
         </div>
 
         <!-- 커리큘럼 매칭 분석 결과 -->
         <div id="curriculumResultContainer" class="chat-report" style="display: none;">
-            <h2>커리큘럼 매칭 분석</h2>
-            
-            <div class="summary-section">
-                <h2>교과목별 달성도</h2>
-                <div id="curriculumMatchesContent"></div>
-            </div>
-            
-            <div class="summary-section">
-                <h2>세부 매칭 결과</h2>
-                <div id="matchingDetails"></div>
-            </div>
+            <h2>토픽 유사도 기반 커리큘럼 매칭</h2>
+            <div id="curriculumAnalysis"></div>
+        </div>
 
-            <div class="summary-section">
-                <h2>교과목별 달성도 차트</h2>
-                <canvas id="subjectChart"></canvas>
-            </div>
+        <!-- 전처리 메트릭 -->
+        <div id="preprocessMetricsContainer" class="chat-report" style="display: none;">
+            <h2>전처리 메트릭</h2>
+            <div id="preprocessMetrics"></div>
         </div>
     </div>
 
@@ -434,8 +540,10 @@
             const vttFileInput = document.getElementById('vttFile');
             const curriculumFileInput = document.getElementById('curriculumFile');
             const loadingDiv = document.getElementById('loading');
-            const vttResultContainer = document.getElementById('vttResultContainer');
+            const lectureResultContainer = document.getElementById('lectureResultContainer');
+            const riskResultContainer = document.getElementById('riskResultContainer');
             const curriculumResultContainer = document.getElementById('curriculumResultContainer');
+            const preprocessMetricsContainer = document.getElementById('preprocessMetricsContainer');
             
             if (!vttFileInput.files.length || !curriculumFileInput.files.length) {
                 alert('VTT 파일과 커리큘럼 파일을 모두 선택해주세요.');
@@ -449,8 +557,10 @@
             try {
                 // 로딩 표시 시작
                 loadingDiv.style.display = 'block';
-                vttResultContainer.style.display = 'none';
+                lectureResultContainer.style.display = 'none';
+                riskResultContainer.style.display = 'none';
                 curriculumResultContainer.style.display = 'none';
+                preprocessMetricsContainer.style.display = 'none';
                 
                 // 분석 진행 상황 업데이트를 위한 EventSource 연결
                 const eventSource = new EventSource('/analysis-progress');
@@ -474,20 +584,32 @@
                 
                 const data = await response.json();
                 
-                // 분석 결과 표시
-                if (data.vtt_result) {
-                    document.getElementById('vttAnalysis').innerHTML = data.vtt_result;
-                    vttResultContainer.style.display = 'block';
+                // 강의 내용 분석 결과 표시
+                if (data.lecture_result) {
+                    document.getElementById('lectureAnalysis').innerHTML = data.lecture_result;
+                    lectureResultContainer.style.display = 'block';
                 }
 
-                // 커리큘럼 분석 결과 표시
+                // 위험 발언 분석 결과 표시
+                if (data.risk_result) {
+                    document.getElementById('riskAnalysis').innerHTML = data.risk_result;
+                    riskResultContainer.style.display = 'block';
+                }
+
+                // 커리큘럼 매칭 분석 결과 표시
                 if (data.curriculum_result) {
-                    displayCurriculumAnalysis(data.curriculum_result);
+                    document.getElementById('curriculumAnalysis').innerHTML = data.curriculum_result;
                     curriculumResultContainer.style.display = 'block';
                 }
 
+                // 전처리 메트릭 표시
+                if (data.preprocess_metrics) {
+                    displayPreprocessMetrics(data.preprocess_metrics, data.non_topic_blocks_count, data.corrections_count);
+                    preprocessMetricsContainer.style.display = 'block';
+                }
+
                 // 결과가 표시된 후 스크롤
-                vttResultContainer.scrollIntoView({ behavior: 'smooth' });
+                lectureResultContainer.scrollIntoView({ behavior: 'smooth' });
             } catch (error) {
                 alert(error.message);
             } finally {
@@ -575,51 +697,44 @@
             return rows;
         }
 
-        function displayCurriculumAnalysis(data) {
-            const matchesContent = document.getElementById('curriculumMatchesContent');
+        function displayPreprocessMetrics(metrics, nonTopicBlocksCount, correctionsCount) {
+            const metricsDiv = document.getElementById('preprocessMetrics');
             
-            // 교과목별 달성도 표시
-            if (data.matched_subjects) {
-                const subjectsList = document.createElement('ul');
-                subjectsList.className = 'matched-subjects-list';
-                
-                data.matched_subjects.forEach(subject => {
-                    const li = document.createElement('li');
-                    li.innerHTML = `
-                        <span class="subject-name">${subject.name}</span>
-                        <span class="achievement-rate">${subject.achievement_rate}% 달성</span>
-                    `;
-                    subjectsList.appendChild(li);
-                });
-                
-                matchesContent.innerHTML = '';
-                matchesContent.appendChild(subjectsList);
-            }
+            let metricsHtml = `
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <div class="metric-label">비주제 블록 감지</div>
+                        <div class="metric-value">${nonTopicBlocksCount}개</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">교정 적용</div>
+                        <div class="metric-value">${correctionsCount}개</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">교정 수용률</div>
+                        <div class="metric-value">${(metrics.accept_rate * 100).toFixed(1)}%</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">LLM 호출 횟수</div>
+                        <div class="metric-value">${metrics.llm_calls}회</div>
+                    </div>
+                </div>
+            `;
             
-            // 세부내용 달성도 표시
-            const detailsMatchesDiv = document.getElementById('matchingDetails');
-            detailsMatchesDiv.innerHTML = '';
-            
-            if (data.details_matches) {
-                const detailsTable = document.createElement('table');
-                detailsTable.className = 'details-table';
-                detailsTable.innerHTML = `
-                    <thead>
-                        <tr>
-                            <th>교과목</th>
-                            <th>세부내용</th>
-                            <th>달성 여부</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${generateDetailsTableRows(data.details_matches)}
-                    </tbody>
+            if (metrics.applied_by_method) {
+                metricsHtml += `
+                    <div class="correction-methods">
+                        <h3>교정 방법별 적용 현황</h3>
+                        <ul>
+                            <li>규칙 기반: ${metrics.applied_by_method.RULE}개</li>
+                            <li>LLM 선택: ${metrics.applied_by_method.LLM_SELECT}개</li>
+                            <li>LGV: ${metrics.applied_by_method.LGV}개</li>
+                        </ul>
+                    </div>
                 `;
-                detailsMatchesDiv.appendChild(detailsTable);
             }
             
-            // 차트 생성
-            createChart(data.matched_subjects);
+            metricsDiv.innerHTML = metricsHtml;
         }
     </script>
 </body>
