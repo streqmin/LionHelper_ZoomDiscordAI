@@ -9,6 +9,7 @@ VTT 전처리 모듈의 결과를 활용하여 3가지 기능을 강화:
 """
 import os
 import logging
+import math
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -21,7 +22,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-from vtt_preprocess.topic import build_topic_index
+from vtt_preprocess.topic import build_topic_index, build_curriculum_sentence_index
 from vtt_preprocess.schema import Segment
 
 from vtt_preprocessor import VTTPreprocessor
@@ -285,8 +286,8 @@ Please respond in Korean language in the following format:
     def analyze_curriculum_matching(self, segments: List[Segment], curriculum_path: str) -> Dict[str, Any]:
         """3. 토픽 유사도 기반 커리큘럼 매칭"""
         try:
-            # 토픽 인덱스 구축
-            topic_index = build_topic_index(curriculum_path)
+            # 새로운 문장 기반 토픽 인덱스 구축
+            topic_index = build_curriculum_sentence_index(curriculum_path)
             
             # 각 세그먼트별 토픽 점수 계산
             segment_scores = []
@@ -297,39 +298,62 @@ Please respond in Korean language in the following format:
                 # 토픽 점수 계산
                 topic_score = topic_index.topic_score(seg.text)
                 
-                # 가장 관련성 높은 토픽 찾기
-                best_topic = None
+                # 가장 관련성 높은 커리큘럼 문장 찾기
+                best_curriculum = None
                 best_score = 0
-                for term in getattr(topic_index, 'terms', []):
-                    # 개별 term에 대한 점수는 topic_score 메서드로 계산
-                    # term이 포함된 텍스트로 점수 계산
-                    term_text = f"{term} {seg.text}"
-                    term_score = topic_index.topic_score(term_text)
-                    if term_score > best_score:
-                        best_score = term_score
-                        best_topic = term
+                curriculum_sentences = getattr(topic_index, 'curriculum_sentences', [])
+                
+                if curriculum_sentences and topic_index._bm25:
+                    # 세그먼트 텍스트를 토큰화
+                    from vtt_preprocess.topic import _tokenize
+                    segment_tokens = _tokenize(seg.text)
+                    
+                    if segment_tokens:
+                        # 각 커리큘럼 문장과의 BM25 점수 계산
+                        scores = topic_index._bm25.get_scores(segment_tokens)
+                        
+                        print(f"세그먼트 텍스트: {seg.text}")
+                        print(f"토큰화된 세그먼트: {segment_tokens}")
+                        
+                        # 가장 높은 점수를 가진 커리큘럼 찾기
+                        for i, score in enumerate(scores):
+                            curriculum_sentence = curriculum_sentences[i]
+                            # print(f"커리큘럼 {i}: {curriculum_sentence}")
+                            # print(f"BM25 점수: {score}")
+                            
+                            if score > best_score:
+                                best_score = score
+                                best_curriculum = curriculum_sentence
+                        
+                        # 점수를 0~1 범위로 정규화 (topic_score와 동일한 방식)
+                        if best_score > 0:
+                            best_score = float(1.0 - math.exp(-best_score / topic_index.scale))
+                        
+                        print(f"최고 점수: {best_score}")
+                        print(f"매칭된 커리큘럼: {best_curriculum}")
+                        print("=" * 50)
                 
                 segment_scores.append({
                     'sid': seg.sid,
                     'text': seg.text,
                     'topic_score': topic_score,
-                    'best_topic': best_topic,
+                    'best_curriculum': best_curriculum,
                     'best_score': best_score,
                     'start_sec': seg.start_sec,
                     'end_sec': seg.end_sec
                 })
             
-            # 토픽별 그룹화
-            topic_groups = {}
+            # 커리큘럼별 그룹화
+            curriculum_groups = {}
             for seg_score in segment_scores:
-                topic = seg_score['best_topic'] or '기타'
-                if topic not in topic_groups:
-                    topic_groups[topic] = []
-                topic_groups[topic].append(seg_score)
+                curriculum = seg_score['best_curriculum'] or '기타'
+                if curriculum not in curriculum_groups:
+                    curriculum_groups[curriculum] = []
+                curriculum_groups[curriculum].append(seg_score)
             
-            # 각 토픽별 통계 계산
-            topic_stats = {}
-            for topic, segs in topic_groups.items():
+            # 각 커리큘럼별 통계 계산
+            curriculum_stats = {}
+            for curriculum, segs in curriculum_groups.items():
                 if not segs:
                     continue
                     
@@ -337,19 +361,19 @@ Please respond in Korean language in the following format:
                 avg_score = total_score / len(segs)
                 total_duration = sum(seg['end_sec'] - seg['start_sec'] for seg in segs)
                 
-                topic_stats[topic] = {
+                curriculum_stats[curriculum] = {
                     'segment_count': len(segs),
                     'total_score': total_score,
                     'average_score': avg_score,
                     'total_duration_sec': total_duration,
-                    'coverage_percentage': (total_duration / sum(seg['end_sec'] - seg['start_sec'] for seg in segment_scores)) * 100
+                    'coverage_percentage': (total_duration / sum(seg['end_sec'] - seg['start_sec'] for seg in segment_scores)) * 100 if segment_scores else 0
                 }
             
             return {
                 'segment_scores': segment_scores,
-                'topic_groups': topic_groups,
-                'topic_stats': topic_stats,
-                'curriculum_terms': getattr(topic_index, 'terms', [])
+                'curriculum_groups': curriculum_groups,
+                'curriculum_stats': curriculum_stats,
+                'curriculum_sentences': curriculum_sentences
             }
             
         except Exception as e:
@@ -357,9 +381,9 @@ Please respond in Korean language in the following format:
             return {
                 'error': f"커리큘럼 매칭 분석 중 오류 발생: {str(e)}",
                 'segment_scores': [],
-                'topic_groups': {},
-                'topic_stats': {},
-                'curriculum_terms': []
+                'curriculum_groups': {},
+                'curriculum_stats': {},
+                'curriculum_sentences': []
             }
 
     def _split_text(self, text: str, max_chunk_size: int = 2000) -> List[str]:
@@ -467,7 +491,6 @@ If no risk speech is found, set "has_risk" to false and provide empty arrays for
         
         try:
             result = self._make_request(prompt)
-            print(f"'risk' in chunk: {result}")
             if result:
                 # JSON 파싱 시도
                 import json

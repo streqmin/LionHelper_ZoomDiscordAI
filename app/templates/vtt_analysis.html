@@ -564,11 +564,6 @@
             <div id="curriculumAnalysis"></div>
         </div>
 
-        <!-- 전처리 메트릭 -->
-        <div id="preprocessMetricsContainer" class="chat-report" style="display: none;">
-            <h2>전처리 메트릭</h2>
-            <div id="preprocessMetrics"></div>
-        </div>
     </div>
 
     <script>
@@ -583,7 +578,6 @@
             const lectureResultContainer = document.getElementById('lectureResultContainer');
             const riskResultContainer = document.getElementById('riskResultContainer');
             const curriculumResultContainer = document.getElementById('curriculumResultContainer');
-            const preprocessMetricsContainer = document.getElementById('preprocessMetricsContainer');
             
             if (!vttFileInput.files.length || !curriculumFileInput.files.length) {
                 alert('VTT 파일과 커리큘럼 파일을 모두 선택해주세요.');
@@ -600,7 +594,6 @@
                 lectureResultContainer.style.display = 'none';
                 riskResultContainer.style.display = 'none';
                 curriculumResultContainer.style.display = 'none';
-                preprocessMetricsContainer.style.display = 'none';
                 
                 // 분석 진행 상황 업데이트를 위한 EventSource 연결
                 const eventSource = new EventSource('/analysis-progress');
@@ -642,11 +635,6 @@
                     curriculumResultContainer.style.display = 'block';
                 }
 
-                // 전처리 메트릭 표시
-                if (data.preprocess_metrics) {
-                    displayPreprocessMetrics(data.preprocess_metrics, data.non_topic_blocks_count, data.corrections_count);
-                    preprocessMetricsContainer.style.display = 'block';
-                }
 
                 // 결과가 표시된 후 스크롤
                 lectureResultContainer.scrollIntoView({ behavior: 'smooth' });
@@ -737,45 +725,6 @@
             return rows;
         }
 
-        function displayPreprocessMetrics(metrics, nonTopicBlocksCount, correctionsCount) {
-            const metricsDiv = document.getElementById('preprocessMetrics');
-            
-            let metricsHtml = `
-                <div class="metrics-grid">
-                    <div class="metric-item">
-                        <div class="metric-label">비주제 블록 감지</div>
-                        <div class="metric-value">${nonTopicBlocksCount}개</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">교정 적용</div>
-                        <div class="metric-value">${correctionsCount}개</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">교정 수용률</div>
-                        <div class="metric-value">${(metrics.accept_rate * 100).toFixed(1)}%</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">LLM 호출 횟수</div>
-                        <div class="metric-value">${metrics.llm_calls}회</div>
-                    </div>
-                </div>
-            `;
-            
-            if (metrics.applied_by_method) {
-                metricsHtml += `
-                    <div class="correction-methods">
-                        <h3>교정 방법별 적용 현황</h3>
-                        <ul>
-                            <li>규칙 기반: ${metrics.applied_by_method.RULE}개</li>
-                            <li>LLM 선택: ${metrics.applied_by_method.LLM_SELECT}개</li>
-                            <li>LGV: ${metrics.applied_by_method.LGV}개</li>
-                        </ul>
-                    </div>
-                `;
-            }
-            
-            metricsDiv.innerHTML = metricsHtml;
-        }
     </script>
 </body>
 </html> 

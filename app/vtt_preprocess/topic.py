@@ -313,6 +313,69 @@ def build_topic_index(curriculum_xlsx_path: str) -> TopicIndex:
     return TopicIndex(docs_tokens=docs_tokens, raw_terms=raw_terms, scale=6.0)
 
 
+def build_curriculum_sentence_index(curriculum_xlsx_path: str) -> TopicIndex:
+    """
+    커리큘럼 XLSX에서 (교과목명, 세부 항목 요약, 세부내용)을 하나로 묶은 문장으로 BM25 인덱스를 구축.
+    - 각 커리큘럼 항목을 하나의 완전한 문장으로 구성하여 더 정확한 매칭 제공
+    - 시간표 형식 시트가 있으면 그 표만 사용
+    - 없으면 일반 형식 파서로 시도
+    """
+    rows = _read_curriculum_rows_timetable_first(curriculum_xlsx_path)
+    docs_tokens: List[List[str]] = []
+    raw_terms: List[str] = []
+    curriculum_sentences: List[str] = []
+
+    for rec in rows:
+        # 교과목명, 세부 항목 요약, 세부내용을 하나의 문장으로 구성
+        subject = rec.get("subject", "").strip()
+        unit = rec.get("unit", "").strip()
+        detail = rec.get("detail", "").strip()
+        
+        # 키워드 필드에서 세부내용 추출 시도
+        if not detail:
+            keywords = rec.get("keywords", "").strip()
+            # 키워드에서 교과목명과 세부 항목 요약을 제외한 나머지를 세부내용으로 간주
+            if keywords and subject and unit:
+                # 키워드에서 subject와 unit을 제거한 나머지를 detail로 사용
+                remaining = keywords.replace(subject, "").replace(unit, "").strip()
+                if remaining:
+                    detail = remaining
+        
+        # 문장 구성: "교과목명의 세부 항목 요약에 대해 세부내용을 학습합니다"
+        if subject and unit and detail:
+            sentence = f"{subject}의 {unit}에 대해 {detail}을 학습합니다"
+        elif subject and unit:
+            sentence = f"{subject}의 {unit}을 학습합니다"
+        elif subject:
+            sentence = f"{subject}을 학습합니다"
+        else:
+            # 기존 방식으로 폴백
+            sentence = rec.get("keywords", "").strip()
+            if not sentence:
+                continue
+        
+        if not sentence.strip():
+            continue
+            
+        # 문장을 토큰화
+        toks = _tokenize(sentence)
+        if not toks:
+            continue
+            
+        docs_tokens.append(toks)
+        raw_terms.extend(toks)
+        curriculum_sentences.append(sentence)
+
+    if not docs_tokens:
+        # 완전 빈 경우라도 안전 인스턴스 반환
+        return TopicIndex(docs_tokens=[], raw_terms=[])
+
+    # TopicIndex에 커리큘럼 문장 정보 추가
+    topic_index = TopicIndex(docs_tokens=docs_tokens, raw_terms=raw_terms, scale=6.0)
+    topic_index.curriculum_sentences = curriculum_sentences
+    return topic_index
+
+
 # --------------------------
 # 시간표 전용 파서
 # --------------------------
@@ -438,7 +501,7 @@ def _try_parse_timetable_sheet(ws) -> Optional[List[Dict[str, str]]]:
             continue
 
         rows_out.append(
-            {"keywords": keywords, "subject": course or "", "unit": summary or ""}
+            {"keywords": keywords, "subject": course or "", "unit": summary or "", "detail": detail or ""}
         )
 
     return rows_out if rows_out else None

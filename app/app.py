@@ -444,7 +444,7 @@ def format_vtt_analysis(content):
 
 def format_chat_analysis(content):
     """채팅 분석 결과를 HTML 형식으로 변환"""
-    logger.info(f"채팅 분석 결과 변환 시작: {content}")
+    logger.info(f"채팅 분석 결과 변환 시작")
     
     # 섹션을 분리 (--- 구분자 기준)
     sections = content.split('---')
@@ -687,7 +687,7 @@ def format_enhanced_analysis_result(content, analysis_type='lecture'):
 
 def format_lecture_analysis(content):
     """강의 내용 분석 결과를 HTML 형식으로 변환"""
-    logger.info(f"강의 분석 결과 변환 시작: {content}")
+    logger.info(f"강의 분석 결과 변환 시작")
     
     # content가 딕셔너리인 경우 처리 (enhanced_gpt_client.py에서 반환하는 구조)
     if isinstance(content, dict):
@@ -927,7 +927,7 @@ def format_lecture_analysis(content):
 
 def format_risk_analysis(content):
     """위험 발언 분석 결과를 HTML 형식으로 변환"""
-    logger.info(f"위험 발언 분석 결과 변환 시작: {content}")
+    logger.info(f"위험 발언 분석 결과 변환 시작")
     
     # content가 딕셔너리인 경우 처리 (enhanced_gpt_client.py에서 반환하는 구조)
     if isinstance(content, dict):
@@ -975,7 +975,6 @@ def format_risk_analysis(content):
                 # 위험 발언 분석 결과 처리
                 has_risk = risk_analysis.get('has_risk', False)
                 
-                print(f"chunk_id: {chunk_id}, has_risk: {has_risk}")
                 # has_risk가 false인 경우 해당 청크는 HTML 생성하지 않음
                 if not has_risk:
                     continue
@@ -1235,23 +1234,23 @@ def format_curriculum_matching_result(curriculum_matching):
     
     html_content = ['<div class="curriculum-matching-result">']
     
-    # 토픽별 통계
-    topic_stats = curriculum_matching.get('topic_stats', {})
-    if topic_stats:
+    # 커리큘럼별 통계
+    curriculum_stats = curriculum_matching.get('curriculum_stats', {})
+    if curriculum_stats:
         html_content.extend([
             '<div class="category-section">',
-            '    <h2 class="category-title">토픽별 커버리지</h2>',
-            '    <div class="topic-stats">'
+            '    <h2 class="category-title">커리큘럼별 커버리지</h2>',
+            '    <div class="curriculum-stats" style="max-height: 400px; overflow-y: auto;">'
         ])
         
-        for topic, stats in topic_stats.items():
+        for curriculum, stats in curriculum_stats.items():
             coverage = stats.get('coverage_percentage', 0)
             avg_score = stats.get('average_score', 0)
             segment_count = stats.get('segment_count', 0)
             
             html_content.extend([
                 f'        <div class="topic-item">',
-                f'            <div class="topic-name">{topic}</div>',
+                f'            <div class="topic-name">{curriculum}</div>',
                 f'            <div class="topic-metrics">',
                 f'                <span class="coverage">커버리지: {coverage:.1f}%</span>',
                 f'                <span class="score">평균 점수: {avg_score:.2f}</span>',
@@ -1271,9 +1270,9 @@ def format_curriculum_matching_result(curriculum_matching):
         html_content.extend([
             '<div class="category-section">',
             '    <h2 class="category-title">세그먼트별 매칭 결과</h2>',
-            '    <div class="segment-matching">',
+            '    <div class="segment-matching" style="max-height: 600px; overflow-y: auto;">',
             '        <table class="matching-table">',
-            '            <thead>',
+            '            <thead style="position: sticky; top: 0; background-color: #FFF5EB; z-index: 10;">',
             '                <tr>',
             '                    <th>시간</th>',
             '                    <th>토픽</th>',
@@ -1284,15 +1283,17 @@ def format_curriculum_matching_result(curriculum_matching):
             '            <tbody>'
         ])
         
-        for seg_score in segment_scores[:20]:  # 상위 20개만 표시
+        for seg_score in segment_scores:  # 상위 20개만 표시
             start_time = f"{int(seg_score['start_sec']//60):02d}:{int(seg_score['start_sec']%60):02d}"
-            topic = seg_score.get('best_topic', '기타')
+            end_time = f"{int(seg_score['end_sec']//60):02d}:{int(seg_score['end_sec']%60):02d}"
+            time_range = f"{start_time} ~ {end_time}"
+            topic = seg_score.get('best_curriculum', '기타')
             score = seg_score.get('best_score', 0)
             preview = seg_score.get('text', '')[:100] + '...' if len(seg_score.get('text', '')) > 100 else seg_score.get('text', '')
             
             html_content.extend([
                 '                <tr>',
-                f'                    <td>{start_time}</td>',
+                f'                    <td>{time_range}</td>',
                 f'                    <td>{topic}</td>',
                 f'                    <td>{score:.2f}</td>',
                 f'                    <td>{preview}</td>',
