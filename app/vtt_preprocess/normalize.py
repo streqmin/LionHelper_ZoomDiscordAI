@@ -5,8 +5,8 @@ import unicodedata as ud
 import re
 from typing import List
 
-from schema import Segment
-from utils import is_mixed_token
+from .schema import Segment
+from .utils import is_mixed_token
 
 
 # ---- 정규식 패턴 (가벼운 수준만) ----

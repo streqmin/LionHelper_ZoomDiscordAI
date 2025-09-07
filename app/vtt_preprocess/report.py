@@ -25,9 +25,9 @@ import csv
 import os
 from typing import Dict, List, Optional, Tuple
 
-from config import Config
-from schema import Segment, CorrectionRecord
-from utils import timecode
+from .config import Config
+from .schema import Segment, CorrectionRecord
+from .utils import timecode
 
 _cfg = Config()
 

@@ -11,8 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Tuple
 
-from topic import TopicIndex
-from config import Config
+from .topic import TopicIndex
+from .config import Config
 
 _cfg = Config()
 

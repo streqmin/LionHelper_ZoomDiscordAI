@@ -18,8 +18,8 @@ from dataclasses import replace
 
 from rapidfuzz import fuzz
 
-from schema import Segment
-from config import Config
+from .schema import Segment
+from .config import Config
 
 _cfg = Config()
 

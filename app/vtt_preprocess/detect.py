@@ -23,9 +23,9 @@ from typing import Dict, List, Set, Tuple
 
 import numpy as np
 
-from schema import Segment, Span
-from config import Config
-from utils import is_mixed_token, looks_like_digit_suffix
+from .schema import Segment, Span
+from .config import Config
+from .utils import is_mixed_token, looks_like_digit_suffix
 
 _cfg = Config()
 

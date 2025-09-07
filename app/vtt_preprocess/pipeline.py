@@ -5,17 +5,17 @@ from typing import List, Dict, Any, Optional
 import json
 import os
 
-from config import Config
-from schema import Outputs, Segment, Span, CorrectionRecord
-from io_vtt import read_vtt  # write_vtt는 report.save_vtt 사용
-from normalize import normalize_segments
-from segment import merge_segments
-from topic import build_topic_index, TopicIndex
-from non_topic import detect_non_topic_blocks
-from detect import detect_error_spans
-from correct import correct_segments
-from llm_client import LLMClient
-from report import (
+from .config import Config
+from .schema import Outputs, Segment, Span, CorrectionRecord
+from .io_vtt import read_vtt  # write_vtt는 report.save_vtt 사용
+from .normalize import normalize_segments
+from .segment import merge_segments
+from .topic import build_topic_index, TopicIndex
+from .non_topic import detect_non_topic_blocks
+from .detect import detect_error_spans
+from .correct import correct_segments
+from .llm_client import LLMClient
+from .report import (
     save_vtt,
     save_corrections_csv,
     save_non_topic_blocks_csv_with_segments,

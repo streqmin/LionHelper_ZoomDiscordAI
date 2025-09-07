@@ -24,9 +24,9 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-from schema import Segment, NonTopicBlock
-from config import Config
-from topic import TopicIndex  # optional 사용
+from .schema import Segment, NonTopicBlock
+from .config import Config
+from .topic import TopicIndex  # optional 사용
 
 _cfg = Config()
 

@@ -1,12 +1,12 @@
 # run_pipeline.py
-from __future__ import annotations
+from .__future__ import annotations
 import argparse, os, sys
 
 # 패키지 경로를 PYTHONPATH 맨 앞에 추가
 ROOT = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(0, ROOT)
 
-from pipeline import run_preprocess
+from .pipeline import run_preprocess
 
 
 def main():

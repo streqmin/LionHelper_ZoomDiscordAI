@@ -3,7 +3,7 @@ import logging
 from flask import Flask, request, jsonify, render_template, Response
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
-from enhanced_gpt_client import EnhancedGPTClient
+from .enhanced_gpt_client import EnhancedGPTClient
 import json
 import queue
 
@@ -689,7 +689,144 @@ def format_lecture_analysis(content):
     """강의 내용 분석 결과를 HTML 형식으로 변환"""
     logger.info(f"강의 분석 결과 변환 시작: {content}")
     
-    # 섹션을 분리 (--- 구분자 기준)
+    # content가 딕셔너리인 경우 처리 (enhanced_gpt_client.py에서 반환하는 구조)
+    if isinstance(content, dict):
+        if 'error' in content:
+            return f'<div class="error-message"><p>{content["error"]}</p></div>'
+        
+        # 딕셔너리 구조에서 lecture_results 추출
+        lecture_results = content.get('lecture_results', [])
+        total_chunks = content.get('total_chunks', 0)
+        
+        html_content = ['<div class="analysis-result">']
+        
+        # 각 청크별 결과 처리
+        for i, result in enumerate(lecture_results, 1):
+            chunk_id = result.get('chunk_id', i)
+            analysis = result.get('analysis', '')
+            segments = result.get('segments', [])
+            chunk_time_range = result.get('chunk_time_range', '')
+            
+            # 분석 결과를 파싱 (GPT가 반환한 문자열을 파싱)
+            sections = analysis.split('---') if analysis else []
+            lecture_sections = {
+                '주요 내용': [],
+                '키워드': [],
+                '분석': [],
+                '학습 포인트': []
+            }
+            
+            # 각 섹션 처리
+            for section in sections:
+                if not section.strip():
+                    continue
+                    
+                lines = section.strip().split('\n')
+                current_category = None
+                
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                        
+                    if line.startswith('# '):
+                        current_category = line[2:].strip()
+                        continue
+                    
+                    if current_category in lecture_sections:
+                        if line.startswith('- '):
+                            lecture_sections[current_category].append(line[2:].strip())
+                        else:
+                            lecture_sections[current_category].append(line.strip())
+            
+            # 청크별 결과 HTML 생성
+            html_content.extend([
+                f'<div class="category-section">',
+                f'    <h2 class="category-title">청크 {chunk_id}'
+            ])
+            
+            # 시간대 정보 추가
+            if chunk_time_range:
+                html_content.append(f'        <span class="time-range">({chunk_time_range})</span>')
+            
+            # 키워드
+            if lecture_sections['키워드']:
+                html_content.extend([
+                    '    <div class="keyword-section">',
+                    '        <h3 class="keyword-title">키워드</h3>',
+                    '        <ul class="keyword-list">'
+                ])
+                for keyword in lecture_sections['키워드']:
+                    html_content.append(f'            <li>{keyword}</li>')
+                html_content.extend([
+                    '        </ul>',
+                    '    </div>'
+                ])
+            
+            html_content.append('    </h2>')
+            
+            # 주요 내용
+            if lecture_sections['주요 내용']:
+                html_content.extend([
+                    '    <div class="subsection">',
+                    '        <h3 class="subsection-title">주요 내용</h3>',
+                    '        <div class="main-topics">',
+                    f'        <p>{". ".join(lecture_sections["주요 내용"])}</p>',
+                    '        </div>',
+                    '    </div>'
+                ])
+            
+            # 분석
+            if lecture_sections['분석']:
+                html_content.extend([
+                    '    <div class="subsection">',
+                    '        <h3 class="subsection-title">분석</h3>',
+                    '        <div class="main-topics">',
+                    f'        <p>{". ".join(lecture_sections["분석"])}</p>',
+                    '        </div>',
+                    '    </div>'
+                ])
+            
+            # 학습 포인트
+            if lecture_sections['학습 포인트']:
+                html_content.extend([
+                    '    <div class="subsection">',
+                    '        <h3 class="subsection-title">학습 포인트</h3>',
+                    '        <div class="main-topics">',
+                    '        <ul class="learning-points">'
+                ])
+                for point in lecture_sections['학습 포인트']:
+                    html_content.append(f'            <li>{point}</li>')
+                html_content.extend([
+                    '        </ul>',
+                    '        </div>',
+                    '    </div>'
+                ])
+            
+            # 세그먼트 정보
+            if segments:
+                html_content.extend([
+                    '    <div class="subsection">',
+                    '        <h3 class="subsection-title">시간 정보</h3>',
+                    '        <div class="main-topics">',
+                    '        <ul class="time-info">'
+                ])
+                for segment in segments[:5]:  # 최대 5개만 표시
+                    time_range = segment.get('time_range', '')
+                    text = segment.get('text', '')[:100] + '...' if len(segment.get('text', '')) > 100 else segment.get('text', '')
+                    html_content.append(f'            <li><strong>{time_range}:</strong> {text}</li>')
+                html_content.extend([
+                    '        </ul>',
+                    '        </div>',
+                    '    </div>'
+                ])
+            
+            html_content.append('</div>')
+        
+        html_content.append('</div>')
+        return '\n'.join(html_content)
+    
+    # 기존 문자열 처리 로직 (하위 호환성)
     sections = content.split('---')
     logger.info(f"강의 섹션 분할 결과: {sections}")
     
@@ -792,7 +929,193 @@ def format_risk_analysis(content):
     """위험 발언 분석 결과를 HTML 형식으로 변환"""
     logger.info(f"위험 발언 분석 결과 변환 시작: {content}")
     
-    # 섹션을 분리 (--- 구분자 기준)
+    # content가 딕셔너리인 경우 처리 (enhanced_gpt_client.py에서 반환하는 구조)
+    if isinstance(content, dict):
+        if 'error' in content:
+            return f'<div class="error-message"><p>{content["error"]}</p></div>'
+        
+        # 딕셔너리 구조에서 risk_results 추출
+        risk_results = content.get('risk_results', [])
+        total_chunks = content.get('total_chunks', 0)
+        risk_found = content.get('risk_found', False)
+        summary = content.get('summary', '')
+        
+        html_content = ['<div class="analysis-result">']
+        
+        if summary:
+            html_content.extend([
+                '<div class="category-section">',
+                '    <h2 class="category-title">분석 요약</h2>',
+                '    <div class="main-topics">',
+                f'        <p>{summary}</p>',
+                '    </div>',
+                '</div>'
+            ])
+        
+        # 위험 발언이 발견된 청크만 처리
+        if not risk_results:
+            # 위험 발언이 전혀 없는 경우
+            html_content.extend([
+                '<div class="category-section">',
+                '    <h2 class="category-title">위험 발언 분석 결과</h2>',
+                '    <div class="main-topics">',
+                '        <p>전체 강의 내용에서 위험 발언이 발견되지 않았습니다.</p>',
+                '    </div>',
+                '</div>'
+            ])
+        else:
+            # 각 청크별 결과 처리 (위험 발언이 있는 청크만)
+            for i, result in enumerate(risk_results, 1):
+                chunk_id = result.get('chunk_id', i)
+                chunk_text = result.get('chunk_text', '')
+                risk_analysis = result.get('risk_analysis', {})
+                affected_segments = result.get('affected_segments', [])
+                chunk_time_range = result.get('chunk_time_range', '')
+                
+                # 위험 발언 분석 결과 처리
+                has_risk = risk_analysis.get('has_risk', False)
+                
+                print(f"chunk_id: {chunk_id}, has_risk: {has_risk}")
+                # has_risk가 false인 경우 해당 청크는 HTML 생성하지 않음
+                if not has_risk:
+                    continue
+                
+                risk_types = risk_analysis.get('risk_types', [])
+                risk_texts = risk_analysis.get('risk_texts', [])
+                risk_analysis_text = risk_analysis.get('risk_analysis', '')
+                precautions = risk_analysis.get('precautions', [])
+                improvement_suggestions = risk_analysis.get('improvement_suggestions', [])
+                
+                # 청크별 결과 HTML 생성
+                html_content.extend([
+                    f'<div class="category-section">',
+                    f'    <h2 class="category-title">청크 {chunk_id}'
+                ])
+                
+                # 시간대 정보 추가
+                if chunk_time_range:
+                    html_content.append(f'        <span class="time-range">({chunk_time_range})</span>')
+                
+                html_content.append('    </h2>')
+                
+                # 위험 발언 상태
+                html_content.extend([
+                    '    <div class="subsection">',
+                    '        <h3 class="subsection-title">위험 발언 상태</h3>',
+                    '        <div class="main-topics">',
+                    f'        <p>위험 발언 발견: 예</p>',
+                    '    </div>',
+                    '    </div>'
+                ])
+                
+                # 위험 유형
+                if risk_types:
+                    html_content.extend([
+                        '    <div class="subsection">',
+                        '        <h3 class="subsection-title">위험 유형</h3>',
+                        '        <div class="main-topics">',
+                        '        <ul class="risk-types">'
+                    ])
+                    for risk_type in risk_types:
+                        html_content.append(f'            <li>{risk_type}</li>')
+                    html_content.extend([
+                        '        </ul>',
+                        '        </div>',
+                        '    </div>'
+                    ])
+                
+                # 위험 발언 텍스트
+                if risk_texts:
+                    html_content.extend([
+                        '    <div class="subsection">',
+                        '        <h3 class="subsection-title">위험 발언 텍스트</h3>',
+                        '        <div class="main-topics">',
+                        '        <ul class="risk-texts">'
+                    ])
+                    for risk_text in risk_texts:
+                        html_content.append(f'            <li>{risk_text}</li>')
+                    html_content.extend([
+                        '        </ul>',
+                        '        </div>',
+                        '    </div>'
+                    ])
+                
+                # 위험 분석
+                if risk_analysis_text:
+                    html_content.extend([
+                        '    <div class="subsection">',
+                        '        <h3 class="subsection-title">위험 분석</h3>',
+                        '        <div class="main-topics">',
+                        f'        <p>{risk_analysis_text}</p>',
+                        '        </div>',
+                        '    </div>'
+                    ])
+                
+                # 주의사항
+                if precautions:
+                    html_content.extend([
+                        '    <div class="subsection">',
+                        '        <h3 class="subsection-title">주의사항</h3>',
+                        '        <div class="main-topics">',
+                        '        <ul class="precautions">'
+                    ])
+                    for precaution in precautions:
+                        html_content.append(f'            <li>{precaution}</li>')
+                    html_content.extend([
+                        '        </ul>',
+                        '        </div>',
+                        '    </div>'
+                    ])
+                
+                # 개선 제안
+                if improvement_suggestions:
+                    html_content.extend([
+                        '    <div class="subsection">',
+                        '        <h3 class="subsection-title">개선 제안</h3>',
+                        '        <div class="main-topics">',
+                        '        <ul class="improvement-suggestions">'
+                    ])
+                    for suggestion in improvement_suggestions:
+                        html_content.append(f'            <li>{suggestion}</li>')
+                    html_content.extend([
+                        '        </ul>',
+                        '        </div>',
+                        '    </div>'
+                    ])
+                
+                # 영향받은 세그먼트
+                if affected_segments:
+                    html_content.extend([
+                        '    <div class="subsection">',
+                        '        <h3 class="subsection-title">영향받은 세그먼트</h3>',
+                        '        <div class="main-topics">',
+                        '        <ul class="affected-segments">'
+                    ])
+                    for segment in affected_segments:
+                        time_range = segment.get('time_range', '')
+                        text = segment.get('text', '')[:100] + '...' if len(segment.get('text', '')) > 100 else segment.get('text', '')
+                        matched_risks = segment.get('matched_risks', [])
+                        html_content.append(f'            <li><strong>{time_range}:</strong> {text}')
+                        if matched_risks:
+                            html_content.append('                <ul>')
+                            for risk in matched_risks:
+                                risk_text = risk.get('risk_text', '')
+                                confidence = risk.get('confidence', 0)
+                                html_content.append(f'                    <li>위험: {risk_text} (신뢰도: {confidence:.2f})</li>')
+                            html_content.append('                </ul>')
+                        html_content.append('            </li>')
+                    html_content.extend([
+                        '        </ul>',
+                        '        </div>',
+                        '    </div>'
+                    ])
+                
+                html_content.append('</div>')
+        
+        html_content.append('</div>')
+        return '\n'.join(html_content)
+    
+    # 기존 문자열 처리 로직 (하위 호환성)
     sections = content.split('---')
     logger.info(f"위험 발언 섹션 분할 결과: {sections}")
     

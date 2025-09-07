@@ -5,7 +5,7 @@ from typing import List
 
 import webvtt
 
-from schema import Segment
+from .schema import Segment
 
 
 def _ts_to_seconds(ts: str) -> float:

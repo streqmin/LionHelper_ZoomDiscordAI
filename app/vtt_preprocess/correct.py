@@ -11,12 +11,12 @@ from dataclasses import replace
 from typing import Dict, List, Tuple, Optional
 import re
 
-from schema import Segment, Span, CorrectionRecord
-from topic import TopicIndex
-from llm_client import LLMClient
-from verify import approve_change
-from utils import timecode
-from config import Config
+from .schema import Segment, Span, CorrectionRecord
+from .topic import TopicIndex
+from .llm_client import LLMClient
+from .verify import approve_change
+from .utils import timecode
+from .config import Config
 
 _cfg = Config()
 

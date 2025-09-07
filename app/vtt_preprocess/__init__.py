@@ -2,3 +2,5 @@
 """VTT Preprocess v1.0 (Render Free · 외부 LLM 선별 호출)"""
 from .pipeline import run_preprocess
 from .config import Config
+from .topic import build_topic_index
+from .schema import Segment, Outputs, NonTopicBlock, CorrectionRecord, Span

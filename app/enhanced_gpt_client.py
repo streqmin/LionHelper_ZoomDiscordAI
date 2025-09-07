@@ -13,6 +13,14 @@ from typing import List, Dict, Any, Optional
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+import sys
+import os
+
+# 현재 디렉토리를 Python path에 추가
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
 from vtt_preprocess.topic import build_topic_index
 from vtt_preprocess.schema import Segment
 
@@ -166,28 +174,36 @@ The following is the core content of a lecture. Non-topic blocks (greetings, con
 [Lecture Content]
 {chunk['text']}
 
-Please respond in the following format:
+Please respond in Korean language in the following format:
 
-# Main Content
-(Summarize the key content of this section in 2-3 sentences)
+# 주요 내용
+(이 섹션의 핵심 내용을 2-3문장으로 요약해주세요)
 
-# Keywords
-(List the main keywords separated by commas)
+# 키워드
+(주요 키워드를 쉼표로 구분하여 나열해주세요)
 
-# Analysis
-(Provide a general analysis of the lecture content in 3-4 sentences)
+# 분석
+(강의 내용에 대한 일반적인 분석을 3-4문장으로 제공해주세요)
 
-# Learning Points
-(List important points that learners should pay attention to)
+# 학습 포인트
+(학습자가 주의깊게 봐야 할 중요한 포인트들을 나열해주세요)
 """
                 
                 result = self._make_request(prompt)
                 if result:
                     # 세그먼트 정보와 함께 결과 저장
+                    # 청크의 시간대 계산 (첫 번째 세그먼트의 시작부터 마지막 세그먼트의 끝까지)
+                    chunk_start = min(seg.start_sec for seg in chunk['segments'])
+                    chunk_end = max(seg.end_sec for seg in chunk['segments'])
+                    chunk_time_range = f"{self._format_time(chunk_start)} - {self._format_time(chunk_end)}"
+                    
                     lecture_results.append({
                         'chunk_id': i,
                         'chunk_text': chunk['text'],
                         'analysis': result,
+                        'chunk_time_range': chunk_time_range,
+                        'chunk_start_sec': chunk_start,
+                        'chunk_end_sec': chunk_end,
                         'segments': [
                             {
                                 'sid': seg.sid,
@@ -231,6 +247,11 @@ Please respond in the following format:
                 
                 # 위험 발언이 발견되면 세그먼트 매핑
                 if risk_analysis['has_risk']:
+                    # 청크의 시간대 계산
+                    chunk_start = min(seg.start_sec for seg in chunk['segments'])
+                    chunk_end = max(seg.end_sec for seg in chunk['segments'])
+                    chunk_time_range = f"{self._format_time(chunk_start)} - {self._format_time(chunk_end)}"
+                    
                     mapped_segments = self._map_risk_to_segments(
                         risk_analysis['risk_texts'], 
                         chunk['segments']
@@ -239,6 +260,9 @@ Please respond in the following format:
                         'chunk_id': i,
                         'chunk_text': chunk['text'],
                         'risk_analysis': risk_analysis,
+                        'chunk_time_range': chunk_time_range,
+                        'chunk_start_sec': chunk_start,
+                        'chunk_end_sec': chunk_end,
                         'affected_segments': mapped_segments
                     })
             
@@ -271,13 +295,16 @@ Please respond in the following format:
                     continue
                     
                 # 토픽 점수 계산
-                topic_score = topic_index.score_text(seg.text)
+                topic_score = topic_index.topic_score(seg.text)
                 
                 # 가장 관련성 높은 토픽 찾기
                 best_topic = None
                 best_score = 0
                 for term in getattr(topic_index, 'terms', []):
-                    term_score = topic_index.score_text(seg.text, term)
+                    # 개별 term에 대한 점수는 topic_score 메서드로 계산
+                    # term이 포함된 텍스트로 점수 계산
+                    term_text = f"{term} {seg.text}"
+                    term_score = topic_index.topic_score(term_text)
                     if term_score > best_score:
                         best_score = term_score
                         best_topic = term
@@ -424,15 +451,15 @@ The following is corrected lecture content. ASR errors have been fixed to provid
 [Corrected Lecture Content]
 {chunk_text}
 
-Please analyze this content for risk speech and respond in the following JSON format:
+Please analyze this content for risk speech and respond in Korean language in the following JSON format:
 
 {{
     "has_risk": true/false,
-    "risk_types": ["discriminatory", "inappropriate", "sensitive_topic", etc.],
-    "risk_texts": ["exact text that contains risk speech"],
-    "risk_analysis": "detailed analysis of the risk speech",
-    "precautions": ["list of parts that require attention"],
-    "improvement_suggestions": ["suggestions for improvement if risk found"]
+    "risk_types": ["차별적", "부적절한", "민감한 주제", "기타"],
+    "risk_texts": ["위험 발언이 포함된 정확한 텍스트"],
+    "risk_analysis": "위험 발언에 대한 상세한 분석",
+    "precautions": ["주의가 필요한 부분들의 목록"],
+    "improvement_suggestions": ["위험 발언이 발견된 경우 개선 제안"]
 }}
 
 If no risk speech is found, set "has_risk" to false and provide empty arrays for risk-related fields.
@@ -440,15 +467,29 @@ If no risk speech is found, set "has_risk" to false and provide empty arrays for
         
         try:
             result = self._make_request(prompt)
+            print(f"'risk' in chunk: {result}")
             if result:
                 # JSON 파싱 시도
                 import json
                 try:
                     return json.loads(result)
                 except json.JSONDecodeError:
-                    # JSON 파싱 실패 시 기본 구조 반환
+                    # JSON 파싱 실패 시 문자열에서 has_risk 값 추출
+                    has_risk = False
+                    if isinstance(result, str):
+                        # 문자열에서 "has_risk": true/false 패턴 찾기
+                        import re
+                        match = re.search(r'"has_risk"\s*:\s*(true|false)', result, re.IGNORECASE)
+                        if match:
+                            has_risk = match.group(1).lower() == 'true'
+                        else:
+                            # "has_risk": true/false 패턴이 없으면 내용에서 추론
+                            has_risk = 'true' in result.lower() and 'has_risk' in result.lower()
+                    elif isinstance(result, bool):
+                        has_risk = result
+                    
                     return {
-                        "has_risk": "risk" in result.lower() and "no risk" not in result.lower(),
+                        "has_risk": has_risk,
                         "risk_types": [],
                         "risk_texts": [],
                         "risk_analysis": result,
@@ -594,7 +635,7 @@ If no risk speech is found, set "has_risk" to false and provide empty arrays for
     def _generate_risk_summary(self, risk_results: List[Dict]) -> str:
         """위험 발언 분석 결과 요약 생성"""
         if not risk_results:
-            return "No risk speech found in the lecture content."
+            return "강의 내용에서 위험 발언이 발견되지 않았습니다."
         
         total_risks = sum(len(result['affected_segments']) for result in risk_results)
         risk_types = set()
@@ -603,12 +644,12 @@ If no risk speech is found, set "has_risk" to false and provide empty arrays for
             for risk_type in result['risk_analysis'].get('risk_types', []):
                 risk_types.add(risk_type)
         
-        summary = f"Found {total_risks} segments with risk speech across {len(risk_results)} chunks.\n"
-        summary += f"Risk types detected: {', '.join(risk_types) if risk_types else 'Various'}\n\n"
+        summary = f"{len(risk_results)}개 청크에서 총 {total_risks}개 세그먼트에서 위험 발언이 발견되었습니다.\n"
+        summary += f"발견된 위험 유형: {', '.join(risk_types) if risk_types else '다양한 유형'}\n\n"
         
         for i, result in enumerate(risk_results, 1):
-            summary += f"Chunk {result['chunk_id']}: {len(result['affected_segments'])} segments with risk speech\n"
+            summary += f"청크 {result['chunk_id']}: {len(result['affected_segments'])}개 세그먼트에서 위험 발언 발견\n"
             for segment in result['affected_segments']:
-                summary += f"  - Segment {segment['sid']} ({segment['time_range']}): {len(segment['matched_risks'])} risk(s)\n"
+                summary += f"  - 세그먼트 {segment['sid']} ({segment['time_range']}): {len(segment['matched_risks'])}개 위험 요소\n"
         
         return summary

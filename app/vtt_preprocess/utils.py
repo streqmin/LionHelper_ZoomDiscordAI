@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from typing import Optional
-from config import Config
+from .config import Config
 
 _cfg = Config()
 
