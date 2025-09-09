@@ -19,4 +19,4 @@ bind = f"0.0.0.0:{port}"
 # 로깅 설정
 accesslog = "-"
 errorlog = "-"
-loglevel = "info" 
+loglevel = "info"

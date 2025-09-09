@@ -132,7 +132,7 @@ def summarize_topic_coverage(
         topic_score = float(getattr(seg, "meta", {}).get("topic", 0.0))
         if topic_score > 0.0:  # 0이 아닌 경우만 포함
             valid_segments.append((seg, topic_score))
-    
+
     n_valid = len(valid_segments)
     if n_valid == 0:
         return {"count": 0, "ratio": 0.0, "avg": 0.0, "wavg": 0.0, "threshold": thr}
@@ -191,11 +191,11 @@ def build_markdown_report(
     md.append(f"- 원본 세그먼트 수: **{sb}**\n")
     md.append(f"- 교정 후 세그먼트 수: **{sa}**\n")
     md.append("\n")
-    
+
     for seg in segments_before:
         md.append(f"sid {seg.sid} {seg.meta}\n")
     md.append("\n")
-    
+
     for seg in segments_after:
         md.append(f"sid {seg.tags} {seg.sid} {seg.meta}\n")
     md.append("\n")
@@ -238,11 +238,14 @@ def build_markdown_report(
     # 토픽 커버리지
     md.append(_md_title("커리큘럼 커버리지(간이)", 2))
     md.append(f"- 임계값(threshold): **{cov.get('threshold')}**\n")
-    
+
     # 유효한 세그먼트 수 계산 (topic 점수 > 0)
-    valid_count = sum(1 for seg in segments_after 
-                     if float(getattr(seg, "meta", {}).get("topic", 0.0)) > 0.0)
-    
+    valid_count = sum(
+        1
+        for seg in segments_after
+        if float(getattr(seg, "meta", {}).get("topic", 0.0)) > 0.0
+    )
+
     md.append(
         f"- 세그먼트 기준 커버리지: **{cov.get('ratio',0.0):.1%}**  "
         f"(임계 이상 {cov.get('count',0)} / 유효 세그먼트 {valid_count} / 전체 {sa})\n"

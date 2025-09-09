@@ -330,7 +330,7 @@ def build_curriculum_sentence_index(curriculum_xlsx_path: str) -> TopicIndex:
         subject = rec.get("subject", "").strip()
         unit = rec.get("unit", "").strip()
         detail = rec.get("detail", "").strip()
-        
+
         # 키워드 필드에서 세부내용 추출 시도
         if not detail:
             keywords = rec.get("keywords", "").strip()
@@ -340,7 +340,7 @@ def build_curriculum_sentence_index(curriculum_xlsx_path: str) -> TopicIndex:
                 remaining = keywords.replace(subject, "").replace(unit, "").strip()
                 if remaining:
                     detail = remaining
-        
+
         # 문장 구성: "교과목명의 세부 항목 요약에 대해 세부내용을 학습합니다"
         if subject and unit and detail:
             sentence = f"{subject}의 {unit}에 대해 {detail}을 학습합니다"
@@ -353,15 +353,15 @@ def build_curriculum_sentence_index(curriculum_xlsx_path: str) -> TopicIndex:
             sentence = rec.get("keywords", "").strip()
             if not sentence:
                 continue
-        
+
         if not sentence.strip():
             continue
-            
+
         # 문장을 토큰화
         toks = _tokenize(sentence)
         if not toks:
             continue
-            
+
         docs_tokens.append(toks)
         raw_terms.extend(toks)
         curriculum_sentences.append(sentence)
@@ -501,7 +501,12 @@ def _try_parse_timetable_sheet(ws) -> Optional[List[Dict[str, str]]]:
             continue
 
         rows_out.append(
-            {"keywords": keywords, "subject": course or "", "unit": summary or "", "detail": detail or ""}
+            {
+                "keywords": keywords,
+                "subject": course or "",
+                "unit": summary or "",
+                "detail": detail or "",
+            }
         )
 
     return rows_out if rows_out else None

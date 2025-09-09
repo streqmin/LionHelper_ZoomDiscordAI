@@ -29,42 +29,41 @@ from vtt_preprocessor import VTTPreprocessor
 
 logger = logging.getLogger(__name__)
 
+
 class EnhancedGPTClient:
     def __init__(self, api_key: str):
         """강화된 GPT 클라이언트 초기화"""
         if not api_key:
             raise ValueError("API 키가 제공되지 않았습니다.")
-            
+
         self.logger = logging.getLogger(__name__)
         self.model = "gpt-4o-mini"
-        
+
         # OpenAI 클라이언트 초기화
         self.client = OpenAI(api_key=api_key)
-        
+
         # VTT 전처리기 초기화
         self.vtt_preprocessor = VTTPreprocessor()
-        
+
         self.logger.info(f"EnhancedGPTClient 초기화 완료 (모델: {self.model})")
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
-        reraise=True
+        reraise=True,
     )
     def _make_request(self, prompt: str, max_tokens: int = 2000) -> Optional[str]:
         """GPT API 요청 수행"""
         self.logger.info(f"API 요청 시작 (프롬프트 길이: {len(prompt)} 문자)")
-        
+
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
+                messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
             )
-            
+
             if response and response.choices:
                 result = response.choices[0].message.content
                 self.logger.info("API 요청 성공")
@@ -72,21 +71,25 @@ class EnhancedGPTClient:
             else:
                 self.logger.error("API 응답이 비어있음")
                 raise Exception("API 응답이 비어있습니다")
-                
+
         except Exception as e:
             self.logger.error(f"API 요청 실패: {str(e)}")
             raise
 
-    def preprocess_vtt(self, vtt_path: str, curriculum_path: str, output_dir: str) -> Dict[str, Any]:
+    def preprocess_vtt(
+        self, vtt_path: str, curriculum_path: str, output_dir: str
+    ) -> Dict[str, Any]:
         """VTT 파일 전처리 실행 (VTTPreprocessor 위임)"""
-        return self.vtt_preprocessor.preprocess_vtt(vtt_path, curriculum_path, output_dir)
+        return self.vtt_preprocessor.preprocess_vtt(
+            vtt_path, curriculum_path, output_dir
+        )
 
     def analyze_chat(self, text: str) -> str:
         """채팅 텍스트 분석을 수행"""
         try:
             self.logger.info(f"채팅 텍스트 분석 시작")
             chunks = self._split_text(text)
-        
+
             results = []
             for i, chunk in enumerate(chunks, 1):
                 self.logger.info(f"청크 {i}/{len(chunks)} 분석 중")
@@ -150,7 +153,7 @@ class EnhancedGPTClient:
 
             result = self._make_request(prompt)
             if result:
-                    results.append(result)
+                results.append(result)
 
             return "\n\n---\n\n".join(results)
 
@@ -163,12 +166,12 @@ class EnhancedGPTClient:
         try:
             # 청크로 분할 (세그먼트 정보 포함)
             chunks = self._create_chunks_from_segments(segments, max_chunk_size=3000)
-            
+
             # 각 청크별로 분석
             lecture_results = []
             for i, chunk in enumerate(chunks, 1):
                 self.logger.info(f"강의 내용 청크 {i}/{len(chunks)} 분석 중")
-                
+
                 prompt = f"""
 The following is the core content of a lecture. Non-topic blocks (greetings, conclusions, breaks, etc.) have been removed, containing only pure lecture content.
 
@@ -189,46 +192,45 @@ Please respond in Korean language in the following format:
 # 학습 포인트
 (학습자가 주의깊게 봐야 할 중요한 포인트들을 나열해주세요)
 """
-                
+
                 result = self._make_request(prompt)
                 if result:
                     # 세그먼트 정보와 함께 결과 저장
                     # 청크의 시간대 계산 (첫 번째 세그먼트의 시작부터 마지막 세그먼트의 끝까지)
-                    chunk_start = min(seg.start_sec for seg in chunk['segments'])
-                    chunk_end = max(seg.end_sec for seg in chunk['segments'])
+                    chunk_start = min(seg.start_sec for seg in chunk["segments"])
+                    chunk_end = max(seg.end_sec for seg in chunk["segments"])
                     chunk_time_range = f"{self._format_time(chunk_start)} - {self._format_time(chunk_end)}"
-                    
-                    lecture_results.append({
-                        'chunk_id': i,
-                        'chunk_text': chunk['text'],
-                        'analysis': result,
-                        'chunk_time_range': chunk_time_range,
-                        'chunk_start_sec': chunk_start,
-                        'chunk_end_sec': chunk_end,
-                        'segments': [
-                            {
-                                'sid': seg.sid,
-                                'start_sec': seg.start_sec,
-                                'end_sec': seg.end_sec,
-                                'text': seg.text,
-                                'time_range': f"{self._format_time(seg.start_sec)} - {self._format_time(seg.end_sec)}"
-                            }
-                            for seg in chunk['segments']
-                        ]
-                    })
-            
-            return {
-                'total_chunks': len(chunks),
-                'lecture_results': lecture_results
-            }
-            
+
+                    lecture_results.append(
+                        {
+                            "chunk_id": i,
+                            "chunk_text": chunk["text"],
+                            "analysis": result,
+                            "chunk_time_range": chunk_time_range,
+                            "chunk_start_sec": chunk_start,
+                            "chunk_end_sec": chunk_end,
+                            "segments": [
+                                {
+                                    "sid": seg.sid,
+                                    "start_sec": seg.start_sec,
+                                    "end_sec": seg.end_sec,
+                                    "text": seg.text,
+                                    "time_range": f"{self._format_time(seg.start_sec)} - {self._format_time(seg.end_sec)}",
+                                }
+                                for seg in chunk["segments"]
+                            ],
+                        }
+                    )
+
+            return {"total_chunks": len(chunks), "lecture_results": lecture_results}
+
         except Exception as e:
             self.logger.error(f"강의 내용 분석 실패: {str(e)}")
             return {
-                'error': f"강의 내용 분석 중 오류 발생: {str(e)}",
-                'total_chunks': 0,
-                'lecture_results': [],
-                'summary': ''
+                "error": f"강의 내용 분석 중 오류 발생: {str(e)}",
+                "total_chunks": 0,
+                "lecture_results": [],
+                "summary": "",
             }
 
     def analyze_risk_content(self, segments: List[Segment]) -> Dict[str, Any]:
@@ -237,178 +239,197 @@ Please respond in Korean language in the following format:
             # segments는 이미 correct_segments에서 교정된 상태
             # 청크로 분할 (세그먼트 정보 포함)
             chunks = self._create_chunks_from_segments(segments, max_chunk_size=3000)
-            
+
             # 각 청크별로 위험 발언 분석
             risk_results = []
             for i, chunk in enumerate(chunks, 1):
                 self.logger.info(f"위험 발언 청크 {i}/{len(chunks)} 분석 중")
-                
+
                 # 청크 분석
-                risk_analysis = self._analyze_chunk_for_risk(chunk['text'])
-                
+                risk_analysis = self._analyze_chunk_for_risk(chunk["text"])
+
                 # 위험 발언이 발견되면 세그먼트 매핑
-                if risk_analysis['has_risk']:
+                if risk_analysis["has_risk"]:
                     # 청크의 시간대 계산
-                    chunk_start = min(seg.start_sec for seg in chunk['segments'])
-                    chunk_end = max(seg.end_sec for seg in chunk['segments'])
+                    chunk_start = min(seg.start_sec for seg in chunk["segments"])
+                    chunk_end = max(seg.end_sec for seg in chunk["segments"])
                     chunk_time_range = f"{self._format_time(chunk_start)} - {self._format_time(chunk_end)}"
-                    
+
                     mapped_segments = self._map_risk_to_segments(
-                        risk_analysis['risk_texts'], 
-                        chunk['segments']
+                        risk_analysis["risk_texts"], chunk["segments"]
                     )
-                    risk_results.append({
-                        'chunk_id': i,
-                        'chunk_text': chunk['text'],
-                        'risk_analysis': risk_analysis,
-                        'chunk_time_range': chunk_time_range,
-                        'chunk_start_sec': chunk_start,
-                        'chunk_end_sec': chunk_end,
-                        'affected_segments': mapped_segments
-                    })
-            
+                    risk_results.append(
+                        {
+                            "chunk_id": i,
+                            "chunk_text": chunk["text"],
+                            "risk_analysis": risk_analysis,
+                            "chunk_time_range": chunk_time_range,
+                            "chunk_start_sec": chunk_start,
+                            "chunk_end_sec": chunk_end,
+                            "affected_segments": mapped_segments,
+                        }
+                    )
+
             return {
-                'total_chunks': len(chunks),
-                'risk_found': len(risk_results) > 0,
-                'risk_results': risk_results,
-                'summary': self._generate_risk_summary(risk_results)
+                "total_chunks": len(chunks),
+                "risk_found": len(risk_results) > 0,
+                "risk_results": risk_results,
+                "summary": self._generate_risk_summary(risk_results),
             }
-            
+
         except Exception as e:
             self.logger.error(f"위험 발언 분석 실패: {str(e)}")
             return {
-                'error': f"위험 발언 분석 중 오류 발생: {str(e)}",
-                'total_chunks': 0,
-                'risk_found': False,
-                'risk_results': []
+                "error": f"위험 발언 분석 중 오류 발생: {str(e)}",
+                "total_chunks": 0,
+                "risk_found": False,
+                "risk_results": [],
             }
 
-    def analyze_curriculum_matching(self, segments: List[Segment], curriculum_path: str) -> Dict[str, Any]:
+    def analyze_curriculum_matching(
+        self, segments: List[Segment], curriculum_path: str
+    ) -> Dict[str, Any]:
         """3. 토픽 유사도 기반 커리큘럼 매칭"""
         try:
             # 새로운 문장 기반 토픽 인덱스 구축
             topic_index = build_curriculum_sentence_index(curriculum_path)
-            
+
             # 각 세그먼트별 토픽 점수 계산
             segment_scores = []
             for seg in segments:
                 if not seg.text.strip():
                     continue
-                    
+
                 # 토픽 점수 계산
                 topic_score = topic_index.topic_score(seg.text)
-                
+
                 # 가장 관련성 높은 커리큘럼 문장 찾기
                 best_curriculum = None
                 best_score = 0
-                curriculum_sentences = getattr(topic_index, 'curriculum_sentences', [])
-                
+                curriculum_sentences = getattr(topic_index, "curriculum_sentences", [])
+
                 if curriculum_sentences and topic_index._bm25:
                     # 세그먼트 텍스트를 토큰화
                     from vtt_preprocess.topic import _tokenize
+
                     segment_tokens = _tokenize(seg.text)
-                    
+
                     if segment_tokens:
                         # 각 커리큘럼 문장과의 BM25 점수 계산
                         scores = topic_index._bm25.get_scores(segment_tokens)
-                        
+
                         print(f"세그먼트 텍스트: {seg.text}")
                         print(f"토큰화된 세그먼트: {segment_tokens}")
-                        
+
                         # 가장 높은 점수를 가진 커리큘럼 찾기
                         for i, score in enumerate(scores):
                             curriculum_sentence = curriculum_sentences[i]
                             # print(f"커리큘럼 {i}: {curriculum_sentence}")
                             # print(f"BM25 점수: {score}")
-                            
+
                             if score > best_score:
                                 best_score = score
                                 best_curriculum = curriculum_sentence
-                        
+
                         # 점수를 0~1 범위로 정규화 (topic_score와 동일한 방식)
                         if best_score > 0:
-                            best_score = float(1.0 - math.exp(-best_score / topic_index.scale))
-                        
+                            best_score = float(
+                                1.0 - math.exp(-best_score / topic_index.scale)
+                            )
+
                         print(f"최고 점수: {best_score}")
                         print(f"매칭된 커리큘럼: {best_curriculum}")
                         print("=" * 50)
-                
-                segment_scores.append({
-                    'sid': seg.sid,
-                    'text': seg.text,
-                    'topic_score': topic_score,
-                    'best_curriculum': best_curriculum,
-                    'best_score': best_score,
-                    'start_sec': seg.start_sec,
-                    'end_sec': seg.end_sec
-                })
-            
+
+                segment_scores.append(
+                    {
+                        "sid": seg.sid,
+                        "text": seg.text,
+                        "topic_score": topic_score,
+                        "best_curriculum": best_curriculum,
+                        "best_score": best_score,
+                        "start_sec": seg.start_sec,
+                        "end_sec": seg.end_sec,
+                    }
+                )
+
             # 커리큘럼별 그룹화
             curriculum_groups = {}
             for seg_score in segment_scores:
-                curriculum = seg_score['best_curriculum'] or '기타'
+                curriculum = seg_score["best_curriculum"] or "기타"
                 if curriculum not in curriculum_groups:
                     curriculum_groups[curriculum] = []
                 curriculum_groups[curriculum].append(seg_score)
-            
+
             # 각 커리큘럼별 통계 계산
             curriculum_stats = {}
             for curriculum, segs in curriculum_groups.items():
                 if not segs:
                     continue
-                    
-                total_score = sum(seg['best_score'] for seg in segs)
+
+                total_score = sum(seg["best_score"] for seg in segs)
                 avg_score = total_score / len(segs)
-                total_duration = sum(seg['end_sec'] - seg['start_sec'] for seg in segs)
-                
+                total_duration = sum(seg["end_sec"] - seg["start_sec"] for seg in segs)
+
                 curriculum_stats[curriculum] = {
-                    'segment_count': len(segs),
-                    'total_score': total_score,
-                    'average_score': avg_score,
-                    'total_duration_sec': total_duration,
-                    'coverage_percentage': (total_duration / sum(seg['end_sec'] - seg['start_sec'] for seg in segment_scores)) * 100 if segment_scores else 0
+                    "segment_count": len(segs),
+                    "total_score": total_score,
+                    "average_score": avg_score,
+                    "total_duration_sec": total_duration,
+                    "coverage_percentage": (
+                        (
+                            total_duration
+                            / sum(
+                                seg["end_sec"] - seg["start_sec"]
+                                for seg in segment_scores
+                            )
+                        )
+                        * 100
+                        if segment_scores
+                        else 0
+                    ),
                 }
-            
+
             return {
-                'segment_scores': segment_scores,
-                'curriculum_groups': curriculum_groups,
-                'curriculum_stats': curriculum_stats,
-                'curriculum_sentences': curriculum_sentences
+                "segment_scores": segment_scores,
+                "curriculum_groups": curriculum_groups,
+                "curriculum_stats": curriculum_stats,
+                "curriculum_sentences": curriculum_sentences,
             }
-            
+
         except Exception as e:
             self.logger.error(f"커리큘럼 매칭 분석 실패: {str(e)}")
             return {
-                'error': f"커리큘럼 매칭 분석 중 오류 발생: {str(e)}",
-                'segment_scores': [],
-                'curriculum_groups': {},
-                'curriculum_stats': {},
-                'curriculum_sentences': []
+                "error": f"커리큘럼 매칭 분석 중 오류 발생: {str(e)}",
+                "segment_scores": [],
+                "curriculum_groups": {},
+                "curriculum_stats": {},
+                "curriculum_sentences": [],
             }
 
     def _split_text(self, text: str, max_chunk_size: int = 2000) -> List[str]:
         """텍스트를 청크로 분할"""
         if not text:
             return []
-            
+
         words = text.split()
         chunks = []
         current_chunk = []
         current_size = 0
-        
+
         for word in words:
             word_size = len(word) + 1  # 공백 포함
             if current_size + word_size > max_chunk_size and current_chunk:
-                chunks.append(' '.join(current_chunk))
+                chunks.append(" ".join(current_chunk))
                 current_chunk = [word]
                 current_size = word_size
             else:
                 current_chunk.append(word)
                 current_size += word_size
-        
+
         if current_chunk:
-            chunks.append(' '.join(current_chunk))
-        
+            chunks.append(" ".join(current_chunk))
+
         return chunks
 
     def test_connection(self) -> bool:
@@ -421,50 +442,54 @@ Please respond in Korean language in the following format:
             self.logger.error(f"API 연결 테스트 실패: {str(e)}")
             return False
 
-
-    def _create_chunks_from_segments(self, segments: List[Segment], max_chunk_size: int = 3000) -> List[Dict]:
+    def _create_chunks_from_segments(
+        self, segments: List[Segment], max_chunk_size: int = 3000
+    ) -> List[Dict]:
         """세그먼트를 청크로 분할 (세그먼트 정보 포함)"""
         chunks = []
-        current_chunk = {
-            'text': '',
-            'segments': [],
-            'char_count': 0
-        }
-        
+        current_chunk = {"text": "", "segments": [], "char_count": 0}
+
         for segment in segments:
             segment_text = segment.text or ""
             segment_length = len(segment_text)
-            
+
             # 현재 청크에 추가할 수 있는지 확인
-            if current_chunk['char_count'] + segment_length > max_chunk_size and current_chunk['segments']:
+            if (
+                current_chunk["char_count"] + segment_length > max_chunk_size
+                and current_chunk["segments"]
+            ):
                 # 현재 청크를 완료하고 새 청크 시작
-                chunks.append({
-                    'text': current_chunk['text'].strip(),
-                    'segments': current_chunk['segments'].copy()
-                })
-                
+                chunks.append(
+                    {
+                        "text": current_chunk["text"].strip(),
+                        "segments": current_chunk["segments"].copy(),
+                    }
+                )
+
                 current_chunk = {
-                    'text': segment_text,
-                    'segments': [segment],
-                    'char_count': segment_length
+                    "text": segment_text,
+                    "segments": [segment],
+                    "char_count": segment_length,
                 }
             else:
                 # 현재 청크에 추가
-                if current_chunk['text']:
-                    current_chunk['text'] += "\n" + segment_text
+                if current_chunk["text"]:
+                    current_chunk["text"] += "\n" + segment_text
                 else:
-                    current_chunk['text'] = segment_text
-                
-                current_chunk['segments'].append(segment)
-                current_chunk['char_count'] += segment_length
-        
+                    current_chunk["text"] = segment_text
+
+                current_chunk["segments"].append(segment)
+                current_chunk["char_count"] += segment_length
+
         # 마지막 청크 추가
-        if current_chunk['segments']:
-            chunks.append({
-                'text': current_chunk['text'].strip(),
-                'segments': current_chunk['segments']
-            })
-        
+        if current_chunk["segments"]:
+            chunks.append(
+                {
+                    "text": current_chunk["text"].strip(),
+                    "segments": current_chunk["segments"],
+                }
+            )
+
         return chunks
 
     def _analyze_chunk_for_risk(self, chunk_text: str) -> Dict[str, Any]:
@@ -488,12 +513,13 @@ Please analyze this content for risk speech and respond in Korean language in th
 
 If no risk speech is found, set "has_risk" to false and provide empty arrays for risk-related fields.
 """
-        
+
         try:
             result = self._make_request(prompt)
             if result:
                 # JSON 파싱 시도
                 import json
+
                 try:
                     return json.loads(result)
                 except json.JSONDecodeError:
@@ -502,22 +528,28 @@ If no risk speech is found, set "has_risk" to false and provide empty arrays for
                     if isinstance(result, str):
                         # 문자열에서 "has_risk": true/false 패턴 찾기
                         import re
-                        match = re.search(r'"has_risk"\s*:\s*(true|false)', result, re.IGNORECASE)
+
+                        match = re.search(
+                            r'"has_risk"\s*:\s*(true|false)', result, re.IGNORECASE
+                        )
                         if match:
-                            has_risk = match.group(1).lower() == 'true'
+                            has_risk = match.group(1).lower() == "true"
                         else:
                             # "has_risk": true/false 패턴이 없으면 내용에서 추론
-                            has_risk = 'true' in result.lower() and 'has_risk' in result.lower()
+                            has_risk = (
+                                "true" in result.lower()
+                                and "has_risk" in result.lower()
+                            )
                     elif isinstance(result, bool):
                         has_risk = result
-                    
+
                     return {
                         "has_risk": has_risk,
                         "risk_types": [],
                         "risk_texts": [],
                         "risk_analysis": result,
                         "precautions": [],
-                        "improvement_suggestions": []
+                        "improvement_suggestions": [],
                     }
             else:
                 return {
@@ -526,7 +558,7 @@ If no risk speech is found, set "has_risk" to false and provide empty arrays for
                     "risk_texts": [],
                     "risk_analysis": "Analysis failed",
                     "precautions": [],
-                    "improvement_suggestions": []
+                    "improvement_suggestions": [],
                 }
         except Exception as e:
             self.logger.error(f"청크 위험 발언 분석 실패: {str(e)}")
@@ -536,77 +568,124 @@ If no risk speech is found, set "has_risk" to false and provide empty arrays for
                 "risk_texts": [],
                 "risk_analysis": f"Analysis error: {str(e)}",
                 "precautions": [],
-                "improvement_suggestions": []
+                "improvement_suggestions": [],
             }
 
-    def _map_risk_to_segments(self, risk_texts: List[str], segments: List[Segment]) -> List[Dict]:
+    def _map_risk_to_segments(
+        self, risk_texts: List[str], segments: List[Segment]
+    ) -> List[Dict]:
         """위험 발언 텍스트를 세그먼트와 매칭"""
         affected_segments = []
-        
+
         for segment in segments:
             segment_text = segment.text or ""
             matched_risks = []
-            
+
             # 각 위험 발언 텍스트와 세그먼트 매칭
             for risk_text in risk_texts:
                 if self._text_contains_risk(segment_text, risk_text):
                     risk_portion = self._extract_risk_portion(segment_text, risk_text)
-                    matched_risks.append({
-                        'risk_text': risk_text,
-                        'risk_portion': risk_portion,
-                        'confidence': self._calculate_match_confidence(segment_text, risk_text)
-                    })
-            
+                    matched_risks.append(
+                        {
+                            "risk_text": risk_text,
+                            "risk_portion": risk_portion,
+                            "confidence": self._calculate_match_confidence(
+                                segment_text, risk_text
+                            ),
+                        }
+                    )
+
             # 매칭된 위험 발언이 있으면 세그먼트 정보 추가
             if matched_risks:
-                affected_segments.append({
-                    'sid': segment.sid,
-                    'start_sec': segment.start_sec,
-                    'end_sec': segment.end_sec,
-                    'text': segment_text,
-                    'matched_risks': matched_risks,
-                    'time_range': f"{self._format_time(segment.start_sec)} - {self._format_time(segment.end_sec)}"
-                })
-        
+                affected_segments.append(
+                    {
+                        "sid": segment.sid,
+                        "start_sec": segment.start_sec,
+                        "end_sec": segment.end_sec,
+                        "text": segment_text,
+                        "matched_risks": matched_risks,
+                        "time_range": f"{self._format_time(segment.start_sec)} - {self._format_time(segment.end_sec)}",
+                    }
+                )
+
         return affected_segments
 
     def _text_contains_risk(self, segment_text: str, risk_text: str) -> bool:
         """세그먼트 텍스트가 위험 발언을 포함하는지 확인"""
         if not risk_text or not segment_text:
             return False
-        
+
         # 대소문자 무시하고 검색
         segment_lower = segment_text.lower()
         risk_lower = risk_text.lower()
-        
+
         # 정확한 매칭
         if risk_lower in segment_lower:
             return True
-        
+
         # 부분 매칭 (위험 발언의 핵심 키워드 추출)
         risk_keywords = self._extract_keywords(risk_lower)
         if risk_keywords:
             # 핵심 키워드가 모두 포함되어 있는지 확인
             return all(keyword in segment_lower for keyword in risk_keywords)
-        
+
         return False
 
     def _extract_keywords(self, text: str) -> List[str]:
         """텍스트에서 핵심 키워드 추출"""
         # 간단한 키워드 추출 (실제로는 더 정교한 NLP 기법 사용 가능)
         import re
-        
+
         # 불용어 제거
-        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those'}
-        
+        stop_words = {
+            "the",
+            "a",
+            "an",
+            "and",
+            "or",
+            "but",
+            "in",
+            "on",
+            "at",
+            "to",
+            "for",
+            "of",
+            "with",
+            "by",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "will",
+            "would",
+            "could",
+            "should",
+            "may",
+            "might",
+            "can",
+            "this",
+            "that",
+            "these",
+            "those",
+        }
+
         # 단어 추출 (2글자 이상)
-        words = re.findall(r'\b\w{2,}\b', text.lower())
-        
+        words = re.findall(r"\b\w{2,}\b", text.lower())
+
         # 불용어 제거하고 빈도가 높은 단어 선택
         filtered_words = [word for word in words if word not in stop_words]
-        
+
         # 상위 3개 키워드 반환
         from collections import Counter
+
         word_counts = Counter(filtered_words)
         return [word for word, count in word_counts.most_common(3)]
 
@@ -614,19 +693,22 @@ If no risk speech is found, set "has_risk" to false and provide empty arrays for
         """세그먼트에서 위험 발언 부분 추출"""
         if not risk_text or not segment_text:
             return ""
-        
+
         # 정확한 매칭이 있으면 해당 부분 반환
         if risk_text.lower() in segment_text.lower():
             start_idx = segment_text.lower().find(risk_text.lower())
             end_idx = start_idx + len(risk_text)
             return segment_text[start_idx:end_idx]
-        
+
         # 부분 매칭의 경우 문장 단위로 추출
-        sentences = segment_text.split('.')
+        sentences = segment_text.split(".")
         for sentence in sentences:
-            if any(keyword in sentence.lower() for keyword in self._extract_keywords(risk_text.lower())):
+            if any(
+                keyword in sentence.lower()
+                for keyword in self._extract_keywords(risk_text.lower())
+            ):
                 return sentence.strip()
-        
+
         # 매칭이 없으면 전체 세그먼트 반환
         return segment_text
 
@@ -634,19 +716,21 @@ If no risk speech is found, set "has_risk" to false and provide empty arrays for
         """매칭 신뢰도 계산 (0.0 ~ 1.0)"""
         if not risk_text or not segment_text:
             return 0.0
-        
+
         # 정확한 매칭
         if risk_text.lower() in segment_text.lower():
             return 1.0
-        
+
         # 키워드 기반 매칭
         risk_keywords = self._extract_keywords(risk_text.lower())
         if not risk_keywords:
             return 0.0
-        
+
         segment_lower = segment_text.lower()
-        matched_keywords = sum(1 for keyword in risk_keywords if keyword in segment_lower)
-        
+        matched_keywords = sum(
+            1 for keyword in risk_keywords if keyword in segment_lower
+        )
+
         return matched_keywords / len(risk_keywords)
 
     def _format_time(self, seconds: float) -> str:
@@ -659,20 +743,20 @@ If no risk speech is found, set "has_risk" to false and provide empty arrays for
         """위험 발언 분석 결과 요약 생성"""
         if not risk_results:
             return "강의 내용에서 위험 발언이 발견되지 않았습니다."
-        
-        total_risks = sum(len(result['affected_segments']) for result in risk_results)
+
+        total_risks = sum(len(result["affected_segments"]) for result in risk_results)
         risk_types = set()
-        
+
         for result in risk_results:
-            for risk_type in result['risk_analysis'].get('risk_types', []):
+            for risk_type in result["risk_analysis"].get("risk_types", []):
                 risk_types.add(risk_type)
-        
+
         summary = f"{len(risk_results)}개 청크에서 총 {total_risks}개 세그먼트에서 위험 발언이 발견되었습니다.\n"
         summary += f"발견된 위험 유형: {', '.join(risk_types) if risk_types else '다양한 유형'}\n\n"
-        
+
         for i, result in enumerate(risk_results, 1):
             summary += f"청크 {result['chunk_id']}: {len(result['affected_segments'])}개 세그먼트에서 위험 발언 발견\n"
-            for segment in result['affected_segments']:
+            for segment in result["affected_segments"]:
                 summary += f"  - 세그먼트 {segment['sid']} ({segment['time_range']}): {len(segment['matched_risks'])}개 위험 요소\n"
-        
+
         return summary
